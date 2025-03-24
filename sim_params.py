@@ -81,7 +81,7 @@ class SimulationParameters:
         # Update last calculation date
         self.last_calculation_date = current_date
         
-        return (self.volatilities, self.correlation_matrix, self.cholesky_matrix)
+        return (self.volatilities,self.cholesky_matrix)
     
     def _calculate_index_returns(self, start_idx, end_idx):
         """

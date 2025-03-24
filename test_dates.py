@@ -35,25 +35,27 @@ def print_date_handler_lists(excel_path):
     # Set key dates and get actual trading dates
     print("\n1. Key Dates:")
     actual_key_dates = date_handler.set_key_dates(key_dates)
+    sim_dates = list(date_handler.key_dates.values())
+    print(sim_dates)
     
-    # Print the actual key dates
-    print("\nActual Key Dates:")
-    for key, date in actual_key_dates.items():
-        print(f"{key}: {date.strftime('%Y-%m-%d')}")
+    # # Print the actual key dates
+    # print("\nActual Key Dates:")
+    # for key, date in actual_key_dates.items():
+    #     print(f"{key}: {date.strftime('%Y-%m-%d')}")
     
-    print("\n")
-    print("\n")
-    print("\n")
-    print(date_handler._find_closest_date(datetime(2009, 1, 12)))
-    print("\n")
-    print(date_handler.get_previous_key_date(datetime(2009, 1, 12)))
-    print(datetime(2009, 1, 5))
-    print("\n")
-    print(date_handler.get_next_key_date(datetime(2009, 1, 12)))
-    print(date_handler.market_dates[:5:])
-    print(date_handler.get_all_key_dates())
-    print(date_handler.market_dates[0])
-    print(date_handler._count_trading_days(datetime(2009, 1, 12), date_handler.market_dates[2370]))
+    # print("\n")
+    # print("\n")
+    # print("\n")
+    # print(date_handler._find_closest_date(datetime(2009, 1, 12)))
+    # print("\n")
+    # print(date_handler.get_previous_key_date(datetime(2009, 1, 12)))
+    # print(datetime(2009, 1, 5))
+    # print("\n")
+    # print(date_handler.get_next_key_date(datetime(2009, 1, 12)))
+    # print(date_handler.market_dates[:5:])
+    # print(date_handler.get_all_key_dates())
+    # print(date_handler.market_dates[0])
+    # print(date_handler._count_trading_days(datetime(2009, 1, 12), date_handler.market_dates[2370]))
     
     return date_handler
 

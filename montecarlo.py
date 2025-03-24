@@ -10,7 +10,7 @@ class MonteCarlo:
     Provides deltas for all assets in a dictionary format.
     """
     
-    def __init__(self, product, simulation, num_samples=10000, fd_steps=0.01):
+    def __init__(self,date_handler, product, simulation,sim_params, num_samples=10000, fd_steps=0.01):
         """
         Initialize the MonteCarlo class.
         
@@ -25,8 +25,10 @@ class MonteCarlo:
         fd_steps : float, optional
             Step size for finite difference calculations (default: 0.01 = 1%)
         """
+        self.date_handler=date_handler
         self.product = product
         self.simulation = simulation
+        self.sim_params=sim_params
         self.num_samples = num_samples
         self.fd_steps = fd_steps
         
@@ -34,7 +36,7 @@ class MonteCarlo:
         self.price = None
         self.deltas = None
     
-    def calculate_deltas(self, past_matrix, current_date_index, seed=None):
+    def calculate_deltas(self, past_matrix, current_date, seed=None):
         """
         Calculate the deltas for all assets using finite differences.
         Returns a dictionary with deltas for all asset types.
@@ -53,39 +55,48 @@ class MonteCarlo:
         dict
             Dictionary mapping asset indices to their deltas
         """
-        # Record start time
-        start_time = time.time()
         
+        start_time = time.time()
+        t0_date = self.date_handler.get_key_date("T0")
+        t1_date = self.date_handler.get_key_date("T1")
+        t2_date = self.date_handler.get_key_date("T2")
+        t3_date = self.date_handler.get_key_date("T3")
+        t4_date = self.date_handler.get_key_date("T4")
+        tc_date = self.date_handler.get_key_date("Tc")
+        key_dates = [t0_date, t1_date, t2_date, t3_date, t4_date, tc_date]
         # Get the domestic interest rate for discounting
         r_d = self.product.get_domestic_rate()
         
         # Calculate time to maturity
-        t0_index = self.product.date_handler.get_key_date_index("T0")
-        tc_index = self.product.date_handler.get_key_date_index("Tc")
-        time_to_maturity = (tc_index - current_date_index) / 252  # Assuming 252 trading days per year
+        t0 = self.product.date_handler.key_dates["T0"]
+        tc = self.product.date_handler.key_dates["Tc"]
+        time_to_maturity = self.date_handler._count_trading_days(t0,tc)/ 262  # Assuming 252 trading days per year
+        volatilities,cholesky_matrix = self.sim_params.calculate_parameters(current_date)
+        discount_factor = np.exp(-r_d * time_to_maturity)
         
         # Generate paths
-        paths = self.simulation.generate_paths(
+        paths = self.simulation.simulate_paths(
             past_matrix=past_matrix,
-            current_date_index=current_date_index,
-            num_simulations=self.num_samples,
-            seed=seed
+            current_date=current_date,
+            volatilities=volatilities,
+            cholesky_matrix=cholesky_matrix
         )
         
-        # Get the current row in the paths matrix
-        current_row = current_date_index - t0_index
+        if current_date in key_dates : 
+            current_row=key_dates.index(current_date)
+        else:
+            current_row=key_dates.index(self.date_handler.get_previous_key_date(current_date))
         
-        # Calculate price from base paths (needed for delta computation)
-        base_payoffs = []
-        for sim in range(self.num_samples):
-            path = paths[:, :, sim]
-            payoff = self.product.calculate_total_payoff(path)['total_payoff']
-            base_payoffs.append(payoff)
+        # # Calculate price from base paths (needed for delta computation)
+        # base_payoffs = []
+        # for sim in range(self.num_samples):
+        #     path = paths[:, :, sim]
+        #     payoff = self.product.calculate_total_payoff(path)['total_payoff']
+        #     base_payoffs.append(payoff)
         
-        # Calculate mean payoff and apply discount factor
-        mean_base_payoff = np.mean(base_payoffs)
-        discount_factor = np.exp(-r_d * time_to_maturity)
-        self.price = mean_base_payoff * discount_factor
+        # # Calculate mean payoff and apply discount factor
+        # mean_base_payoff = np.mean(base_payoffs)
+        # self.price = mean_base_payoff * discount_factor
         
         # Calculate deltas for each asset
         num_assets = past_matrix.shape[1]
@@ -162,22 +173,3 @@ class MonteCarlo:
         
         return labeled_deltas
     
-    def get_all_deltas(self, past_matrix, current_date_index, seed=None):
-        """
-        Convenience method to get deltas in a simple dictionary format.
-        
-        Parameters:
-        -----------
-        past_matrix : numpy.ndarray
-            Past matrix up to the current date
-        current_date_index : int
-            Index of the current date
-        seed : int, optional
-            Random seed for reproducibility (default: None)
-            
-        Returns:
-        --------
-        dict
-            Dictionary with labeled deltas
-        """
-        return self.calculate_deltas(past_matrix, current_date_index, seed)

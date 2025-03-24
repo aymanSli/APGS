@@ -36,13 +36,12 @@ def run_test():
     current_date = datetime(2010, 1, 13)
     
     # Calculate parameters
-    volatilities, correlation_matrix, cholesky_matrix = sim_params.calculate_parameters(current_date)
+    volatilities,cholesky_matrix = sim_params.calculate_parameters(current_date)
     
     # Print summary information
     print(f"Number of assets: {len(sim_params.all_indices)}")
     print(f"Number of currencies: {len(sim_params.foreign_indices)}")
     print(f"Volatility vector shape: {volatilities.shape}")
-    print(f"Correlation matrix shape: {correlation_matrix.shape}")
     print(f"Cholesky matrix shape: {cholesky_matrix.shape}")
     
     # Print a few volatility values as a sample
@@ -50,11 +49,6 @@ def run_test():
     for i, idx in enumerate(sim_params.domestic_indices[:2] + sim_params.foreign_indices[:2]):
         print(f"  {idx}: {volatilities[i]:.4f}")
     
-    # Print correlation matrix summary
-    print("\nCorrelation matrix summary:")
-    print(f"  Min value: {np.min(correlation_matrix):.4f}")
-    print(f"  Max value: {np.max(correlation_matrix):.4f}")
-    print(f"  Mean value: {np.mean(correlation_matrix):.4f}")
 
     print("\nTest complete.")
 

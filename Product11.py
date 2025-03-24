@@ -51,22 +51,23 @@ class Product11:
         self.guarantee_activated = False
         
         # Store interest rates for all currencies
-        self.interest_rates = {}
-        for currency in self.market_data.index_currencies.values():
-            self.interest_rates[currency] = 0.0
+        self.interest_rates = []
         
         # Domestic currency (EUR)
         self.domestic_currency = 'EUR'
         
         # Store grid dates for quick lookups
-        self.grid_dates = market_data.get_all_dates()
+        self.grid_dates = date_handler.market_dates
         
         # Map key dates to their position in the grid
-        self.key_date_positions = {}
-        for key, date in date_handler.key_dates.items():
-            position = self._find_date_position_in_grid(date)
-            if position is not None:
-                self.key_date_positions[key] = position
+        self.key_date_to_row = {
+            'T0': 0,
+            'T1': 1,
+            'T2': 2,
+            'T3': 3,
+            'T4': 4,
+            'Tc': 5
+        }
     
     def _find_date_position_in_grid(self, date):
         """
@@ -101,9 +102,7 @@ class Product11:
         """
         # Get the date index in the market data
         date_index = self.market_data.get_date_index(current_date)
-        
-        for currency in self.market_data.index_currencies.values():
-            self.interest_rates[currency] = self.market_data.get_interest_rate(currency, date_index)
+        self.interest_rates = self.market_data.rates_matrix[date_index]
     
     def get_domestic_rate(self):
         """
@@ -135,10 +134,11 @@ class Product11:
             Adjusted asset value S
         """
         # Get the row position for this key date
-        if date_key not in self.key_date_positions:
-            raise ValueError(f"Key date {date_key} not found in grid")
             
-        row_idx = self.key_date_positions[date_key]
+        row_idx = self.key_date_to_row[date_key]
+        
+        print(row_idx)
+        print(len(path))
         
         if row_idx >= len(path):
             raise ValueError(f"Path does not contain data for {date_key} (row {row_idx})")
@@ -159,15 +159,19 @@ class Product11:
         
         # Extract values from the path
         sx_value = path[row_idx, fx_asset_col]
-        x_adj_value = path[row_idx, fx_rate_col]  # This is X*exp(ri*(t-T0))
+        x_adj_value = path[row_idx, fx_rate_col]
+        r_i=self.market_data.get_interest_rate(
+                self.market_data.index_currencies[index_name], 
+                self.market_data.get_date_index(self.date_handler.key_dates[date_key]))
+        term=self.date_handler._count_trading_days(self.date_handler.key_dates['T0'],self.date_handler.key_dates[date_key]) / 262
+        
+                   # This is X*exp(ri*(t-T0))
         
         # Calculate S = SX / (X*exp(ri*(t-T0))) * exp(ri*(t-T0))
         if x_adj_value > 0:  # Avoid division by zero
             # The foreign asset price is SX / X
-            return sx_value / x_adj_value * self.market_data.get_exchange_rate(
-                self.market_data.index_currencies[index_name], 
-                self.market_data.get_date_index(self.date_handler.key_dates[date_key])
-            )
+            print((sx_value * np.exp(r_i*term)) / x_adj_value)
+            return (sx_value * np.exp(r_i*term)) / x_adj_value 
         else:
             return 0.0
     
@@ -327,12 +331,12 @@ class Product11:
             Discounted dividend
         """
         # Get the domestic interest rate
-        r_d = self.get_domestic_rate()
+        r_d = self.interest_rates[0]
         
         # Get time in years between key dates using market_data grid
         from_date = self.date_handler.key_dates[from_key]
         to_date = self.date_handler.key_dates[to_key]
-        time_fraction = (to_date - from_date).days / 365.0
+        time_fraction = (to_date - from_date).days / 252
         
         # Calculate the discount factor
         discount_factor = np.exp(r_d * time_fraction)
@@ -479,9 +483,6 @@ class Product11:
         for i in range(1, 5):
             t_i = f"T{i}"
             
-            # Skip future observation dates
-            if self.date_handler.key_dates[t_i] > current_date:
-                continue
                 
             # Calculate dividend
             dividend, best_index, best_return = self.calculate_dividend(t_i, path)
@@ -504,20 +505,77 @@ class Product11:
                 'guarantee_triggered_now': guarantee_check and not lifecycle[f"T{i-1}"]['guarantee_activated']
             }
         
-        # Calculate final state at maturity if we've reached it
-        if current_date >= self.date_handler.key_dates['Tc']:
-            final_perf = self.calculate_final_performance(path)
-            final_payoff = self.calculate_final_payoff(path)
-            total_compounded_dividends = sum(data['compounded_dividend'] for key, data in lifecycle.items() if 'compounded_dividend' in data)
-            
-            lifecycle['Tc'] = {
-                'date': self.date_handler.key_dates['Tc'],
-                'final_performance': final_perf,
-                'final_payoff': final_payoff,
-                'total_compounded_dividends': total_compounded_dividends,
-                'total_payoff': final_payoff + total_compounded_dividends,
-                'excluded_indices': self.excluded_indices.copy(),
-                'guarantee_activated': self.guarantee_activated
-            }
+        
+        final_perf = self.calculate_final_performance(path)
+        final_payoff = self.calculate_final_payoff(path)
+        total_compounded_dividends = sum(data['compounded_dividend'] for key, data in lifecycle.items() if 'compounded_dividend' in data)
+        
+        lifecycle['Tc'] = {
+            'date': self.date_handler.key_dates['Tc'],
+            'final_performance': final_perf,
+            'final_payoff': final_payoff,
+            'total_compounded_dividends': total_compounded_dividends,
+            'total_payoff': final_payoff + total_compounded_dividends,
+            'excluded_indices': self.excluded_indices.copy(),
+            'guarantee_activated': self.guarantee_activated
+        }
         
         return lifecycle
+    
+    
+    
+    def print_product_lifecycle(self,lifecycle):
+        """
+        Print the product lifecycle in a clean, formatted way.
+        
+        Parameters:
+        -----------
+        lifecycle : dict
+            Dictionary containing the product lifecycle information
+        """
+        print("\n==== PRODUCT 11 LIFECYCLE SUMMARY ====\n")
+        
+        # Print initial date info
+        print(f"Initial Date (T0): {lifecycle['T0']['date'].strftime('%Y-%m-%d')}")
+        print("-" * 40)
+        
+        # Print information for each observation date
+        for i in range(1, 5):
+            t_i = f"T{i}"
+            
+            if t_i not in lifecycle:
+                continue
+                
+            data = lifecycle[t_i]
+            
+            print(f"\nObservation Date {t_i}: {data['date'].strftime('%Y-%m-%d')}")
+            print(f"  Dividend: {data['dividend']:.2f}€")
+            
+            if 'best_index' in data and data['best_index']:
+                print(f"  Best Index: {data['best_index']} (Return: {data['best_return']*100:.2f}%)")
+            
+            if 'guarantee_triggered_now' in data and data['guarantee_triggered_now']:
+                print(f"  *** Minimum guarantee (20%) activated at this date! ***")
+                
+            if 'excluded_indices' in data:
+                excluded = data['excluded_indices']
+                if excluded:
+                    print(f"  Excluded indices so far: {', '.join(excluded)}")
+        
+        # Print final information
+        if 'Tc' in lifecycle:
+            tc_data = lifecycle['Tc']
+            
+            print("\n" + "=" * 40)
+            print(f"Maturity Date (Tc): {tc_data['date'].strftime('%Y-%m-%d')}")
+            print(f"  Final Performance: {tc_data['final_performance']*100:.2f}%")
+            print(f"  Final Payoff: {tc_data['final_payoff']:.2f}€")
+            
+            if 'total_compounded_dividends' in tc_data:
+                print(f"  Total Dividends: {tc_data['total_compounded_dividends']:.2f}€")
+                print(f"  Total Payoff (Dividends + Final): {tc_data['total_payoff']:.2f}€")
+            
+            if 'guarantee_activated' in tc_data and tc_data['guarantee_activated']:
+                print("  Minimum guarantee was activated during the product's lifetime")
+        
+        print("\n==== END OF LIFECYCLE SUMMARY ====")

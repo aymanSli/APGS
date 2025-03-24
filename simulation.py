@@ -1,20 +1,17 @@
 # simulation.py
 import numpy as np
-from typing import List, Tuple
+from datetime import datetime
+from typing import List, Dict, Optional, Tuple
 
 class Simulation:
     """
     Class for generating simulated price paths based on the past matrix.
-    
-    Generates a 3D matrix with dimensions:
-    - rows: dates (indexed relative to T0, so T0 is row 0)
-    - columns: same as past matrix (domestic assets, foreign assets, currencies)
-    - 3rd dimension: number of simulation paths
-    
-    The simulation follows the multi-currency hedging logic.
+    Provides functionalities to:
+    1. Simulate paths from current date to maturity
+    2. Shift paths for sensitivity analysis
     """
     
-    def __init__(self, market_data, date_handler, sim_params):
+    def __init__(self, market_data, date_handler):
         """
         Initialize the Simulation class.
         
@@ -23,562 +20,403 @@ class Simulation:
         market_data : MarketData
             MarketData object containing asset prices, exchange rates, and interest rates
         date_handler : DateHandler
-            DateHandler object containing date indices and key dates
-        sim_params : SimulationParameters
-            SimulationParameters object containing volatilities and correlation matrix
+            DateHandler object containing key dates and trading dates
         """
         self.market_data = market_data
         self.date_handler = date_handler
-        self.sim_params = sim_params
         
-        # Default parameters
+        # Default simulation parameters
         self.num_simulations = 1000
-        self.trading_days_per_year = 252  # For annualization
+        self.trading_days_per_year = 262  # Standard convention for annualization
         
-        # Asset counts for indexing
-        self.num_domestic = len(market_data.domestic_indices)
-        self.num_foreign = len(market_data.foreign_indices)
-        self.num_total_assets = self.num_domestic + self.num_foreign
-        self.num_total_columns = self.num_total_assets + self.num_foreign  # Adding FX columns
+        # Indices and asset counts for indexing
+        self.domestic_indices = self.market_data.domestic_indices
+        self.foreign_indices = self.market_data.foreign_indices
+        self.indices = self.market_data.indices
         
-        # Seed for reproducibility
+        self.num_domestic = len(self.domestic_indices)
+        self.num_foreign = len(self.foreign_indices)
+        self.num_assets = self.num_domestic + self.num_foreign
+        self.num_cols = self.num_assets + self.num_foreign  # Assets + FX rates
+        
+        # For reproducibility
         self.seed = None
     
-    def generate_paths(self, past_matrix, current_date, num_simulations=None, seed=None):
+    def simulate_paths(self, 
+                      past_matrix: np.ndarray,
+                      current_date: datetime, 
+                      volatilities: np.ndarray,
+                      cholesky_matrix: np.ndarray,
+                      num_simulations: int = None,
+                      seed: int = None) -> np.ndarray:
         """
-        Generate simulated price paths based on the past matrix.
+        Generate simulated price paths from current date to maturity.
         
         Parameters:
         -----------
-        past_matrix : numpy.ndarray
-            Past matrix up to the current date
-        current_date : datetime
-            Current date for the simulation
-        num_simulations : int, optional
-            Number of simulation paths to generate
-        seed : int, optional
-            Random seed for reproducibility
-            
+        past_matrix : Past matrix containing historical data up to current date
+        current_date : Current date from which to start simulating
+        volatilities : Volatility vector for all assets and currencies
+        cholesky_matrix : Cholesky decomposition of correlation matrix
+        num_simulations : Number of simulation paths (default: self.num_simulations)
+        seed : Random seed for reproducibility (optional)
+        
         Returns:
         --------
-        numpy.ndarray
-            3D array of simulated paths
+        np.ndarray : Simulated paths including past data
         """
+        # Set simulation parameters
         if num_simulations is not None:
             self.num_simulations = num_simulations
-        
+            
         if seed is not None:
             self.seed = seed
             np.random.seed(seed)
         
-        # Get all simulation dates
-        sim_dates = self.date_handler.get_simulation_dates()
-        
-        # Find the index of current date in simulation grid, or closest previous date
-        current_date_index = -1
-        for i, date in enumerate(sim_dates):
-            if date > current_date:
-                break
-            current_date_index = i
-        
-        if current_date_index < 0:
-            raise ValueError(f"Current date {current_date} is before the first simulation date")
-        
-        # Get key date indices
+        # Get key dates
         t0_date = self.date_handler.get_key_date("T0")
+        t1_date = self.date_handler.get_key_date("T1")
+        t2_date = self.date_handler.get_key_date("T2")
+        t3_date = self.date_handler.get_key_date("T3")
+        t4_date = self.date_handler.get_key_date("T4")
         tc_date = self.date_handler.get_key_date("Tc")
+        key_dates = [t0_date, t1_date, t2_date, t3_date, t4_date, tc_date]
         
-        # Find indices of T0 and Tc in simulation grid
-        t0_index = sim_dates.index(t0_date)
-        tc_index = sim_dates.index(tc_date)
+        # Determine which key dates are in the future from current date
+        future_key_dates = [d for d in key_dates if d > current_date]
+        if not future_key_dates:
+            raise ValueError(f"Current date {current_date} is after all key dates")
         
-        # Determine dimensions
-        num_rows = tc_index - t0_index + 1
-        num_cols = past_matrix.shape[1]
-        
-        # Create 3D array for simulated paths
-        paths = np.zeros((num_rows, num_cols, self.num_simulations))
-        
-        # Determine what part of the past matrix to copy
-        past_rows_to_copy = current_date_index - t0_index + 1
-        
-        # Fill with past matrix data for all simulations
-        for i in range(past_rows_to_copy):
-            for j in range(num_cols):
-                paths[i, j, :] = past_matrix[t0_index + i, j]
-        
-        # Get simulation parameters
-        volatilities, correlation_matrix, cholesky_matrix = self.sim_params.get_parameters()
-        
-        # If the current date is not a simulation date, adjust the starting point
-        if current_date != sim_dates[current_date_index]:
-            # We need to adjust for the fractional time step
-            # Find the next simulation date after current date
-            next_sim_date_index = current_date_index + 1
-            if next_sim_date_index >= len(sim_dates):
-                next_sim_date_index = current_date_index  # Use the current date if at the end
-            
-            next_sim_date = sim_dates[next_sim_date_index]
-            
-            # Calculate the fractional time step in years
-            dt_fraction = (next_sim_date - current_date).days / 365.0
-            
-            # We'll pass this information to the simulation function
-            start_is_exact_sim_date = False
-            dt_first_step = dt_fraction
-        else:
-            start_is_exact_sim_date = True
-            dt_first_step = None
+        # Check if current date is a key date
+        is_key_date = current_date in key_dates
         
         # Get interest rates for all currencies
-        interest_rates = {}
-        for currency in self.market_data.index_currencies.values():
-            current_idx = self.market_data.get_date_index(current_date)
-            interest_rates[currency] = self.market_data.get_interest_rate(currency, current_idx)
+        interest_rates = self._get_interest_rates(current_date)
         
-        # Get domestic interest rate
-        r_d = interest_rates.get('EUR', 0.0)
+        # Create combined array for past and future paths
+        num_rows = len(key_dates)
+        num_cols = past_matrix.shape[1]
+        paths = np.zeros((num_rows, num_cols, self.num_simulations))
         
-        # Simulate future paths from current date to Tc
-        for sim in range(self.num_simulations):
-            self._simulate_single_path(
-                paths, sim, past_rows_to_copy - 1, num_rows, num_cols,
-                volatilities, cholesky_matrix, interest_rates, r_d,
-                sim_dates, t0_index, current_date_index,
-                start_is_exact_sim_date, dt_first_step
+        # Fill in the past matrix data for all simulations
+        for i in range(past_matrix.shape[0]):
+            for j in range(num_cols):
+                paths[i, j, :] = past_matrix[i, j]
+        
+        # Determine starting point for simulation
+        if is_key_date:
+            # Simple case: Start from a key date
+            start_idx = key_dates.index(current_date)
+        else:
+            # Complex case: Start from a non-key date
+            # Find the previous and next key dates
+            prev_key_date = self.date_handler.get_previous_key_date(current_date)
+            next_key_date = self.date_handler.get_next_key_date(current_date)
+            
+            # Find their indices in the key_dates list
+            prev_idx = key_dates.index(prev_key_date)
+            next_idx = key_dates.index(next_key_date)
+            
+            # Simulate from current date to next key date
+            self._simulate_to_next_key_date(
+                paths, past_matrix[-1], prev_idx, next_idx,
+                current_date, next_key_date, 
+                volatilities, cholesky_matrix, interest_rates
+            )
+            
+            # Update starting point for subsequent simulations
+            start_idx = next_idx
+        
+        # Main simulation loop between key dates
+        for i in range(start_idx, len(key_dates) - 1):
+            # Calculate time step between key dates
+            dt = self.date_handler._count_trading_days(key_dates[i], key_dates[i+1]) / self.trading_days_per_year
+            
+            # Simulate for this time step
+            self._simulate_step(
+                paths, i, i+1, dt,
+                volatilities, cholesky_matrix, interest_rates
             )
         
         return paths
     
-    def _create_asset_sigma_vectors(self, volatilities):
+    def shift_path(self, 
+                  path: np.ndarray, 
+                  asset_idx: int, 
+                  shift_factor: float, 
+                  current_date: datetime) -> np.ndarray:
         """
-        Create asset-specific sigma vectors following the C++ approach.
+        Shift a specific asset's path for sensitivity analysis.
         
         Parameters:
         -----------
-        volatilities : numpy.ndarray
-            Vector of volatilities for all assets and currencies
+        path : Simulated price path
+        asset_idx : Index of the asset to shift
+        shift_factor : Multiplication factor to apply (e.g., 1.01 for +1%)
+        current_date : Current date
         
         Returns:
         --------
-        list of numpy.ndarray
-            List of asset-specific sigma vectors
+        np.ndarray : Shifted path
         """
-        n_cols = len(volatilities)
+        # Get key dates
+        t0_date = self.date_handler.get_key_date("T0")
+        t1_date = self.date_handler.get_key_date("T1")
+        t2_date = self.date_handler.get_key_date("T2")
+        t3_date = self.date_handler.get_key_date("T3")
+        t4_date = self.date_handler.get_key_date("T4")
+        tc_date = self.date_handler.get_key_date("Tc")
+        key_dates = [t0_date, t1_date, t2_date, t3_date, t4_date, tc_date]
+        
+        # Check if current date is a key date
+        is_key_date = current_date in key_dates
+        
+        # Determine the starting row for the shift
+        if is_key_date:
+            # Simple case: Start from this key date
+            start_row = key_dates.index(current_date)
+        else:
+            # Complex case: Start from the next key date
+            next_key_date = self.date_handler.get_next_key_date(current_date)
+            if next_key_date is None:
+                # If there's no next key date, don't shift anything
+                return path.copy()
+            start_row = key_dates.index(next_key_date)
+        
+        # Create a copy of the path to avoid modifying the original
+        shifted_path = path.copy()
+        
+        # Apply the shift to all values from the starting row
+        for i in range(start_row, path.shape[0]):
+            shifted_path[i, asset_idx] *= shift_factor
+        
+        return shifted_path
+    
+    def _get_interest_rates(self, current_date: datetime) -> Dict[str, float]:
+        """
+        Get interest rates for all currencies at the current date.
+        
+        Parameters:
+        -----------
+        current_date : Current date
+        
+        Returns:
+        --------
+        Dict[str, float] : Dictionary mapping currency codes to interest rates
+        """
+        date_index = self.market_data.get_date_index(current_date)
+        
+        # Get rates for all currencies
+        rates = {}
+        for currency in self.market_data.index_currencies.values():
+            rates[currency] = self.market_data.get_interest_rate(currency, date_index)
+        
+        return rates
+    
+    def _simulate_to_next_key_date(self,
+                                  paths: np.ndarray,
+                                  last_row: np.ndarray,
+                                  next_idx: int,
+                                  current_date: datetime,
+                                  next_key_date: datetime,
+                                  volatilities: np.ndarray,
+                                  cholesky_matrix: np.ndarray,
+                                  interest_rates: Dict[str, float]) -> None:
+        """
+        Special case: Simulate from current non-key date to next key date.
+        
+        Parameters:
+        -----------
+        paths : 3D array to store simulation results
+        last_row : Last row of past data (current values)
+        prev_idx : Index of previous key date
+        next_idx : Index of next key date
+        current_date : Current date (non-key date)
+        next_key_date : Next key date
+        volatilities : Volatilities for all assets and currencies
+        cholesky_matrix : Cholesky decomposition of correlation matrix
+        interest_rates : Interest rates for all currencies
+        """
+        # Calculate time step to next key date (in years)
+        dt = self.date_handler._count_trading_days(current_date, next_key_date) / self.trading_days_per_year
+        sqrt_dt = np.sqrt(dt)
+        
+        # Get domestic interest rate
+        r_d = interest_rates.get('EUR', 0.0)
+        
+        # Create sigma vectors for each asset
+        sigma_vectors = self._create_sigma_vectors(volatilities)
+        
+        # For each simulation path
+        for sim in range(self.num_simulations):
+            # Generate standard normal random vector
+            Z = np.random.standard_normal(len(volatilities))
+            
+            # Update domestic assets
+            for j in range(self.num_domestic):
+                col_idx = j
+                sigma = volatilities[col_idx]
+                prev_value = last_row[col_idx]
+                
+                # Calculate stochastic term using sigma * L^T * Z
+                stochastic_term = np.dot(sigma_vectors[col_idx], cholesky_matrix.T) @ Z * sqrt_dt
+                
+                # Update path with the GBM formula
+                paths[next_idx, col_idx, sim] = prev_value * np.exp(
+                    (r_d - 0.5 * sigma**2) * dt + stochastic_term
+                )
+            
+            # Update foreign assets (SX)
+            for j in range(self.num_foreign):
+                col_idx = self.num_domestic + j
+                sigma = volatilities[col_idx]
+                prev_value = last_row[col_idx]
+                
+                # Get currency for this foreign asset
+                currency = self.market_data.index_currencies[self.foreign_indices[j]]
+                
+                # Calculate stochastic term
+                stochastic_term = np.dot(sigma_vectors[col_idx], cholesky_matrix.T) @ Z * sqrt_dt
+                
+                # Update path with the GBM formula
+                paths[next_idx, col_idx, sim] = prev_value * np.exp(
+                    (r_d - 0.5 * sigma**2) * dt + stochastic_term
+                )
+            
+            # Update exchange rates (X*exp(ri*dt))
+            for j in range(self.num_foreign):
+                col_idx = self.num_assets + j
+                col_idx = self.num_assets + j
+                cholesky_asset = cholesky_matrix[j+1, :]  # Ls
+                cholesky_fx = cholesky_matrix[col_idx, :]  # Lx
+    
+                # Calculate dot product (equivalent to pnl_vect_scalar_prod)
+                rho = np.dot(cholesky_asset, cholesky_fx)  # Ls * Lx
+                asset_sigma = volatilities[j+1]
+                fx_sigma = volatilities[col_idx]
+                # Calculate the combined sigma
+                combined_sigma = np.sqrt(asset_sigma**2 + fx_sigma**2 + 2 * asset_sigma * fx_sigma * rho)
+                prev_value = last_row[col_idx]
+                
+                
+                # Calculate stochastic term
+                stochastic_term = np.dot(sigma_vectors[col_idx], cholesky_matrix.T) @ Z * sqrt_dt
+                
+                # Update path with the GBM formula for FX rates
+                paths[next_idx, col_idx, sim] = prev_value * np.exp(
+                    (r_d - 0.5 * combined_sigma**2) * dt + stochastic_term
+                )
+    
+    def _simulate_step(self,
+                      paths: np.ndarray,
+                      from_idx: int,
+                      to_idx: int,
+                      dt: float,
+                      volatilities: np.ndarray,
+                      cholesky_matrix: np.ndarray,
+                      interest_rates: Dict[str, float]) -> None:
+        """
+        Simulate one key date to the next key date for all paths.
+        
+        Parameters:
+        -----------
+        paths : 3D array to store simulation results
+        from_idx : Index of starting key date
+        to_idx : Index of ending key date
+        dt : Time step in years
+        volatilities : Volatilities for all assets and currencies
+        cholesky_matrix : Cholesky decomposition of correlation matrix
+        interest_rates : Interest rates for all currencies
+        """
+        sqrt_dt = np.sqrt(dt)
+        
+        # Get domestic interest rate
+        r_d = interest_rates.get('EUR', 0.0)
+        
+        # Create sigma vectors for efficient computation
+        sigma_vectors = self._create_sigma_vectors(volatilities)
+        
+        # For each simulation path
+        for sim in range(self.num_simulations):
+            # Generate standard normal random vector
+            Z = np.random.standard_normal(len(volatilities))
+            
+            # Update domestic assets
+            for j in range(self.num_domestic):
+                col_idx = j
+                sigma = volatilities[col_idx]
+                prev_value = paths[from_idx, col_idx, sim]
+                
+                # Calculate stochastic term
+                stochastic_term = np.dot(sigma_vectors[col_idx], cholesky_matrix.T) @ Z * sqrt_dt
+                
+                # Update path with the GBM formula
+                paths[to_idx, col_idx, sim] = prev_value * np.exp(
+                    (r_d - 0.5 * sigma**2) * dt + stochastic_term
+                )
+            
+            # Update foreign assets (SX)
+            for j in range(self.num_foreign):
+                col_idx = self.num_domestic + j
+                sigma = volatilities[col_idx]
+                prev_value = paths[from_idx, col_idx, sim]
+                
+                # Calculate stochastic term
+                stochastic_term = np.dot(sigma_vectors[col_idx], cholesky_matrix.T) @ Z * sqrt_dt
+                
+                # Update path with the GBM formula
+                paths[to_idx, col_idx, sim] = prev_value * np.exp(
+                    (r_d - 0.5 * sigma**2) * dt + stochastic_term
+                )
+            
+            # Update exchange rates (X*exp(ri*dt))
+            for j in range(self.num_foreign):
+                col_idx = self.num_assets + j
+                cholesky_asset = cholesky_matrix[j+1, :]  # Ls
+                cholesky_fx = cholesky_matrix[col_idx, :]  # Lx
+    
+                # Calculate dot product (equivalent to pnl_vect_scalar_prod)
+                rho = np.dot(cholesky_asset, cholesky_fx)  # Ls * Lx
+                asset_sigma = volatilities[j+1]
+                fx_sigma = volatilities[col_idx]
+                # Calculate the combined sigma
+                combined_sigma = np.sqrt(asset_sigma**2 + fx_sigma**2 + 2 * asset_sigma * fx_sigma * rho)
+                prev_value = paths[from_idx, col_idx, sim]
+                
+                # Calculate stochastic term
+                stochastic_term = np.dot(sigma_vectors[col_idx], cholesky_matrix.T) @ Z * sqrt_dt
+                
+                # Update path with the GBM formula for FX rates
+                paths[to_idx, col_idx, sim] = prev_value * np.exp(
+                    (r_d - 0.5 * combined_sigma**2) * dt + stochastic_term
+                )
+    
+    def _create_sigma_vectors(self, volatilities: np.ndarray) -> List[np.ndarray]:
+        """
+        Create sigma vectors for each asset (for multiplication with L^T).
+        
+        Parameters:
+        -----------
+        volatilities : Volatility vector for all assets and currencies
+        
+        Returns:
+        --------
+        List[np.ndarray] : List of sigma vectors
+        """
+        n = len(volatilities)
         sigma_vectors = []
         
-        # Domestic assets
-        for i in range(self.num_domestic):
-            sigma = np.zeros(n_cols)
-            sigma[i] = volatilities[i]
-            sigma_vectors.append(sigma)
+        # For each asset/FX rate, create a vector with its volatility
+        for i in range(5):
+            sigma_vector = np.zeros(n)
+            sigma_vector[i] = volatilities[i]
+            sigma_vectors.append(sigma_vector)
+        for i in range(5,n):
+            sigma_vector = np.zeros(n)
+            sigma_vector[i-4] = volatilities[i-4]
+            sigma_vector[i] = volatilities[i]
+            sigma_vectors.append(sigma_vector)
         
-        # Foreign assets (include both asset and corresponding FX volatility)
-        for i in range(self.num_foreign):
-            asset_idx = self.num_domestic + i
-            fx_idx = self.num_total_assets + i
-            
-            sigma = np.zeros(n_cols)
-            sigma[asset_idx] = volatilities[asset_idx]
-            sigma[fx_idx] = volatilities[fx_idx]
-            sigma_vectors.append(sigma)
-        
-        # Currencies (FX rates)
-        for i in range(self.num_foreign):
-            fx_idx = self.num_total_assets + i
-            
-            sigma = np.zeros(n_cols)
-            sigma[fx_idx] = volatilities[fx_idx]
-            sigma_vectors.append(sigma)
+        print(sigma_vectors)
         
         return sigma_vectors
-    
-    def _calculate_stochastic_term(self, gaussian_vector, cholesky_matrix, sigma_vector, sqrt_dt):
-        """
-        Calculate the stochastic term following the C++ approach.
-        
-        Parameters:
-        -----------
-        gaussian_vector : numpy.ndarray
-            Vector of independent standard normal variables
-        cholesky_matrix : numpy.ndarray
-            Cholesky decomposition of the correlation matrix
-        sigma_vector : numpy.ndarray
-            Asset-specific volatility vector
-        sqrt_dt : float
-            Square root of the time step
-        
-        Returns:
-        --------
-        float
-            The stochastic term
-        """
-        # Multiply sigma by the transposed Cholesky matrix
-        sigma_L = np.dot(sigma_vector, cholesky_matrix.T)
-        
-        # Compute the scalar product with Gaussian vector
-        stochastic_term = np.dot(sigma_L, gaussian_vector) * sqrt_dt
-        
-        return stochastic_term
-    
-    def _simulate_single_path(self, paths, sim_index, start_row, num_rows, num_cols,
-                             volatilities, cholesky_matrix, interest_rates, r_d,
-                             sim_dates, t0_index, current_date_index,
-                             start_is_exact_sim_date, dt_first_step=None):
-        """
-        Simulate a single path from the current date to Tc.
-        
-        Parameters:
-        -----------
-        paths : numpy.ndarray
-            3D array of simulated paths to update
-        sim_index : int
-            Index of the current simulation
-        start_row : int
-            Starting row index (current date, relative to T0)
-        num_rows : int
-            Total number of rows (dates)
-        num_cols : int
-            Number of columns (assets and currencies)
-        volatilities : numpy.ndarray
-            Volatilities for all assets and currencies
-        cholesky_matrix : numpy.ndarray
-            Cholesky decomposition of the correlation matrix
-        interest_rates : dict
-            Interest rates for all currencies
-        r_d : float
-            Domestic interest rate
-        sim_dates : list
-            List of simulation dates
-        t0_index : int
-            Index of T0 in simulation dates
-        current_date_index : int
-            Index of current date (or closest previous date) in simulation dates
-        start_is_exact_sim_date : bool
-            Whether the current date is an exact simulation date
-        dt_first_step : float, optional
-            Time step for the first simulation step if not starting on exact date
-        """
-        # Create asset-specific sigma vectors (like in the C++ approach)
-        sigma_vectors = self._create_asset_sigma_vectors(volatilities)
-        
-        # Track the current row index in the paths array
-        current_row = start_row
-        
-        # Handle special case for first step if not starting on exact simulation date
-        if not start_is_exact_sim_date and dt_first_step is not None:
-            # Generate Gaussian random vector
-            Z = np.random.standard_normal(num_cols)
-            
-            # Get sqrt of time step
-            sqrt_dt_first = np.sqrt(dt_first_step)
-            
-            next_row = current_row + 1
-            
-            # Simulate domestic assets
-            for j in range(self.num_domestic):
-                prev_spot = paths[current_row, j, sim_index]
-                sigma = volatilities[j]
-                
-                # Calculate stochastic term using our method
-                stochastic_term = self._calculate_stochastic_term(Z, cholesky_matrix, sigma_vectors[j], sqrt_dt_first)
-                
-                # Update the spot price using the Black-Scholes formula
-                paths[next_row, j, sim_index] = prev_spot * np.exp(
-                    (r_d - 0.5 * sigma**2) * dt_first_step + stochastic_term
-                )
-            
-            # Simulate foreign assets (SX)
-            for j in range(self.num_foreign):
-                asset_idx = self.num_domestic + j
-                fx_idx = self.num_total_assets + j
-                
-                prev_spot = paths[current_row, asset_idx, sim_index]
-                sigma_vector = sigma_vectors[self.num_domestic + j]
-                
-                # Get the foreign currency for this index
-                currency = self.market_data.index_currencies[self.market_data.foreign_indices[j]]
-                
-                # Calculate stochastic term
-                stochastic_term = self._calculate_stochastic_term(Z, cholesky_matrix, sigma_vector, sqrt_dt_first)
-                
-                # Calculate combined volatility for drift term
-                asset_vol = volatilities[asset_idx]
-                fx_vol = volatilities[fx_idx]
-                asset_row = cholesky_matrix[asset_idx]
-                fx_row = cholesky_matrix[fx_idx]
-                rho = np.dot(asset_row, fx_row)  # Correlation between asset and its FX
-                combined_vol = np.sqrt(asset_vol**2 + fx_vol**2 + 2 * asset_vol * fx_vol * rho)
-                
-                # Update SX
-                paths[next_row, asset_idx, sim_index] = prev_spot * np.exp(
-                    (r_d - 0.5 * combined_vol**2) * dt_first_step + stochastic_term
-                )
-            
-            # Simulate exchange rates with interest rate adjustments
-            for j in range(self.num_foreign):
-                fx_idx = self.num_total_assets + j
-                
-                prev_spot = paths[current_row, fx_idx, sim_index]
-                sigma = volatilities[fx_idx]
-                
-                # Get the foreign currency for this index
-                currency = self.market_data.index_currencies[self.market_data.foreign_indices[j]]
-                r_f = interest_rates.get(currency, 0.0)
-                
-                # For the FX rate, we're simulating X*exp(r_f*t) directly
-                # Calculate stochastic term
-                stochastic_term = self._calculate_stochastic_term(Z, cholesky_matrix, sigma_vectors[self.num_total_assets + j], sqrt_dt_first)
-                
-                # Update X*exp(r_f*t)
-                paths[next_row, fx_idx, sim_index] = prev_spot * np.exp(
-                    (r_d - 0.5 * sigma**2) * dt_first_step + stochastic_term
-                )
-            
-            # Move to the next row
-            current_row = next_row
-        
-        # Continue with regular simulation for remaining time steps
-        for t in range(current_row + 1, num_rows):
-            # Calculate the time step between simulation dates
-            prev_date = sim_dates[t0_index + t - 1]
-            curr_date = sim_dates[t0_index + t]
-            dt = (curr_date - prev_date).days / 365.0
-            sqrt_dt = np.sqrt(dt)
-            
-            # Generate Gaussian random vector
-            Z = np.random.standard_normal(num_cols)
-            
-            # Simulate domestic assets
-            for j in range(self.num_domestic):
-                prev_spot = paths[t-1, j, sim_index]
-                sigma = volatilities[j]
-                
-                # Calculate stochastic term
-                stochastic_term = self._calculate_stochastic_term(Z, cholesky_matrix, sigma_vectors[j], sqrt_dt)
-                
-                # Update the spot price
-                paths[t, j, sim_index] = prev_spot * np.exp(
-                    (r_d - 0.5 * sigma**2) * dt + stochastic_term
-                )
-            
-            # Simulate foreign assets (SX)
-            for j in range(self.num_foreign):
-                asset_idx = self.num_domestic + j
-                fx_idx = self.num_total_assets + j
-                
-                prev_spot = paths[t-1, asset_idx, sim_index]
-                sigma_vector = sigma_vectors[self.num_domestic + j]
-                
-                # Get the foreign currency for this index
-                currency = self.market_data.index_currencies[self.market_data.foreign_indices[j]]
-                
-                # Calculate stochastic term
-                stochastic_term = self._calculate_stochastic_term(Z, cholesky_matrix, sigma_vector, sqrt_dt)
-                
-                # Calculate combined volatility for drift term
-                asset_vol = volatilities[asset_idx]
-                fx_vol = volatilities[fx_idx]
-                asset_row = cholesky_matrix[asset_idx]
-                fx_row = cholesky_matrix[fx_idx]
-                rho = np.dot(asset_row, fx_row)  # Correlation between asset and its FX
-                combined_vol = np.sqrt(asset_vol**2 + fx_vol**2 + 2 * asset_vol * fx_vol * rho)
-                
-                # Update SX
-                paths[t, asset_idx, sim_index] = prev_spot * np.exp(
-                    (r_d - 0.5 * combined_vol**2) * dt + stochastic_term
-                )
-            
-            # Simulate exchange rates with interest rate adjustments
-            for j in range(self.num_foreign):
-                fx_idx = self.num_total_assets + j
-                
-                prev_spot = paths[t-1, fx_idx, sim_index]
-                sigma = volatilities[fx_idx]
-                
-                # Get the foreign currency for this index
-                currency = self.market_data.index_currencies[self.market_data.foreign_indices[j]]
-                r_f = interest_rates.get(currency, 0.0)
-                
-                # Calculate stochastic term
-                stochastic_term = self._calculate_stochastic_term(Z, cholesky_matrix, sigma_vectors[self.num_total_assets + j], sqrt_dt)
-                
-                # Update X*exp(r_f*t)
-                paths[t, fx_idx, sim_index] = prev_spot * np.exp(
-                    (r_d - 0.5 * sigma**2) * dt + stochastic_term
-                )
-    
-    def shift_path(self, paths, asset_index, shift_factor, current_date):
-        """
-        Shift a specific asset's path for delta calculations.
-        
-        Parameters:
-        -----------
-        paths : numpy.ndarray
-            3D array of simulated paths
-        asset_index : int
-            Index of the asset to shift
-        shift_factor : float
-            Factor to shift the path by (e.g., 1.01 for +1%)
-        current_date : datetime
-            Current date
-            
-        Returns:
-        --------
-        numpy.ndarray
-            Shifted paths
-        """
-        # Create a copy of the paths to avoid modifying the original
-        shifted_paths = paths.copy()
-        
-        # Find the row index for the current date
-        sim_dates = self.date_handler.get_simulation_dates()
-        t0_date = self.date_handler.get_key_date("T0")
-        t0_index = sim_dates.index(t0_date)
-        
-        # Find current date index (or closest previous date)
-        current_date_index = -1
-        for i, date in enumerate(sim_dates):
-            if date > current_date:
-                break
-            current_date_index = i
-        
-        if current_date_index < 0:
-            raise ValueError(f"Current date {current_date} is before the first simulation date")
-        
-        # Calculate the row index in the paths array
-        start_row = current_date_index - t0_index
-        
-        # Shift the specified asset from the start row for all simulations
-        for sim in range(paths.shape[2]):
-            for t in range(start_row, paths.shape[0]):
-                shifted_paths[t, asset_index, sim] *= shift_factor
-        
-        return shifted_paths
-    
-    def calculate_delta(self, product, paths, current_date, asset_index, h=0.01):
-        """
-        Calculate delta for a specific asset using finite differences.
-        
-        Parameters:
-        -----------
-        product : Product11
-            Product11 object to calculate payoffs
-        paths : numpy.ndarray
-            3D array of simulated paths
-        current_date : datetime
-            Current date
-        asset_index : int
-            Index of the asset to calculate delta for
-        h : float, optional
-            Perturbation size (default: 0.01 = 1%)
-            
-        Returns:
-        --------
-        float
-            Delta value
-        """
-        # Find the row index for the current date
-        sim_dates = self.date_handler.get_simulation_dates()
-        t0_date = self.date_handler.get_key_date("T0")
-        t0_index = sim_dates.index(t0_date)
-        
-        # Find current date index (or closest previous date)
-        current_date_index = -1
-        for i, date in enumerate(sim_dates):
-            if date > current_date:
-                break
-            current_date_index = i
-        
-        current_matrix_idx = current_date_index - t0_index
-        
-        # Calculate payoff for base case
-        base_payoffs = []
-        for sim in range(paths.shape[2]):
-            # Extract this simulation path
-            path = paths[:, :, sim]
-            
-            # Calculate payoff
-            payoff_info = product.calculate_total_payoff(path)
-            base_payoffs.append(payoff_info['total_payoff'])
-        
-        # Create up-shifted paths
-        up_paths = self.shift_path(paths, asset_index, 1 + h, current_date)
-        
-        # Calculate payoff for up-shifted case
-        up_payoffs = []
-        for sim in range(paths.shape[2]):
-            # Extract this simulation path
-            path = up_paths[:, :, sim]
-            
-            # Calculate payoff
-            payoff_info = product.calculate_total_payoff(path)
-            up_payoffs.append(payoff_info['total_payoff'])
-        
-        # Create down-shifted paths
-        down_paths = self.shift_path(paths, asset_index, 1 - h, current_date)
-        
-        # Calculate payoff for down-shifted case
-        down_payoffs = []
-        for sim in range(paths.shape[2]):
-            # Extract this simulation path
-            path = down_paths[:, :, sim]
-            
-            # Calculate payoff
-            payoff_info = product.calculate_total_payoff(path)
-            down_payoffs.append(payoff_info['total_payoff'])
-        
-        # Calculate average payoffs
-        avg_base = np.mean(base_payoffs)
-        avg_up = np.mean(up_payoffs)
-        avg_down = np.mean(down_payoffs)
-        
-        # Calculate delta using central difference
-        current_spot = paths[current_matrix_idx, asset_index, 0]  # Use first simulation for current spot
-        delta = (avg_up - avg_down) / (2 * h * current_spot)
-        
-        return delta
-    
-    def calculate_all_deltas(self, product, paths, current_date, h=0.01):
-        """
-        Calculate deltas for all assets.
-        
-        Parameters:
-        -----------
-        product : Product11
-            Product11 object to calculate payoffs
-        paths : numpy.ndarray
-            3D array of simulated paths
-        current_date : datetime
-            Current date
-        h : float, optional
-            Perturbation size (default: 0.01 = 1%)
-            
-        Returns:
-        --------
-        dict
-            Dictionary mapping asset names to delta values
-        """
-        # Number of assets and currencies
-        num_domestic = self.num_domestic
-        num_foreign = self.num_foreign
-        
-        # Calculate deltas
-        deltas = {}
-        
-        # Domestic assets
-        for i, asset_name in enumerate(self.market_data.domestic_indices):
-            deltas[asset_name] = self.calculate_delta(product, paths, current_date, i, h)
-        
-        # Foreign assets
-        for i, asset_name in enumerate(self.market_data.foreign_indices):
-            idx = num_domestic + i
-            deltas[asset_name] = self.calculate_delta(product, paths, current_date, idx, h)
-        
-        # Exchange rates
-        for i, asset_name in enumerate(self.market_data.foreign_indices):
-            idx = num_domestic + num_foreign + i
-            currency = self.market_data.index_currencies[asset_name]
-            deltas[f"FX_{currency}"] = self.calculate_delta(product, paths, current_date, idx, h)
-        
-        return deltas

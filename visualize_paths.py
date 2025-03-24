@@ -14,7 +14,7 @@ def visualize_paths():
     data_file_path = "DonneesGPS2025.xlsx"
     date_handler = DateHandler(data_file_path)
     
-    # Set key dates (example dates)
+    # Set key dates
     key_dates = {
         'T0': datetime(2009, 1, 5),
         'T1': datetime(2010, 1, 4),
@@ -25,97 +25,136 @@ def visualize_paths():
     }
     date_handler.set_key_dates(key_dates)
     
-    # Generate simulation and rebalancing grids
-    sim_dates = date_handler.generate_simulation_grid()
-    rebalancing_dates = date_handler.generate_rebalancing_grid()
-    
     # Initialize market data
-    market_data = MarketData(data_file_path, rebalancing_dates)
+    market_data = MarketData(data_file_path, date_handler)
+    
+    # Set current date for testing
+    current_date = datetime(2011, 1, 4)  # Mid-way through the product
+    
+    # Initialize past data manager and get past matrix
+    past_data = PastData(market_data, date_handler)
+    past_matrix = past_data.initialize_past_matrix(current_date)
+    print(f"Past matrix shape: {past_matrix.shape}")
     
     # Calculate simulation parameters
     sim_params = SimulationParameters(market_data, date_handler)
-    sim_params.calculate_parameters(rebalancing_dates[3])  # 4th date in rebalancing grid
-    sim_params.print_parameters()
+    volatilities, cholesky_matrix = sim_params.calculate_parameters(current_date)
+    print(f"Volatilities shape: {volatilities.shape}")
+    print(f"Cholesky matrix shape: {cholesky_matrix.shape}")
     
-    # Initialize PastData and get past matrix
-    past_data = PastData(market_data, date_handler)
-    past_matrix = past_data.initialize_past_matrix(current_date=rebalancing_dates[3])
-    print("paaaaaaaaaaaast\n")
-    print(past_matrix)
+    # Initialize Simulation
+    simulator = Simulation(market_data, date_handler)
     
+    # Generate paths (3 paths for visualization)
+    paths = simulator.simulate_paths(
+        past_matrix=past_matrix, 
+        current_date=current_date,
+        volatilities=volatilities,
+        cholesky_matrix=cholesky_matrix,
+        num_simulations=3,
+        seed=42
+    )
+    print(f"Simulated paths shape: {paths.shape}")
     
-    # # Initialize Simulation
-    # simulator = Simulation(market_data, date_handler, sim_params)
+    # Test path shifting
+    print("\nTesting path shifting...")
+    shifted_path = simulator.shift_path(
+        path=paths[:, :, 0],  # Take first simulation path
+        asset_idx=2,  # Shift the third asset
+        shift_factor=1.05,  # Shift up by 5%
+        current_date=current_date
+    )
     
-    # # Generate paths (3 paths for visualization)
-    # paths = simulator.generate_paths(past_matrix, rebalancing_dates[3], num_simulations=3, seed=42)
+    # Get key dates for plotting
+    key_dates_list = [date_handler.get_key_date(k) for k in ['T0', 'T1', 'T2', 'T3', 'T4', 'Tc']]
     
-    # # Get current date index
-    # current_date = rebalancing_dates[3]
-    # sim_dates = date_handler.get_simulation_dates()
-    # t0_date = date_handler.get_key_date("T0")
-    # t0_index = sim_dates.index(t0_date)
+    # Create figure with subplots (one for each asset/currency)
+    assets_to_show =6  # Limit to a few for clarity
+    fig, axes = plt.subplots(assets_to_show, 1, figsize=(12, 12))
     
-    # # Find current date index (or closest previous date)
-    # current_date_index = -1
-    # for i, date in enumerate(sim_dates):
-    #     if date > current_date:
-    #         break
-    #     current_date_index = i
+    # Labels for each subplot
+    labels = (
+        market_data.domestic_indices + 
+        market_data.foreign_indices + 
+        [f"FX_{market_data.index_currencies[idx]}" for idx in market_data.foreign_indices]
+    )
     
-    # current_matrix_idx = current_date_index - t0_index
+    # Find indices for current date
+    current_date_key_idx = None
+    for i, date in enumerate(key_dates_list):
+        if date >= current_date:
+            if date > current_date:
+                current_date_key_idx = i
+            else:
+                current_date_key_idx = i
+            break
     
-    # # Create figure with 9 subplots (one for each asset/currency)
-    # fig, axes = plt.subplots(3, 3, figsize=(15, 12))
-    # axes = axes.flatten()
+    if current_date_key_idx is None:
+        current_date_key_idx = len(key_dates_list) - 1
     
-    # # Labels for each subplot
-    # labels = (
-    #     market_data.domestic_indices + 
-    #     market_data.foreign_indices + 
-    #     [f"FX_{market_data.index_currencies[idx]}" for idx in market_data.foreign_indices]
-    # )
-    
-    # # Get x-axis dates
-    # t0_absolute_idx = sim_dates.index(t0_date)
-    # plot_dates = sim_dates[t0_absolute_idx:t0_absolute_idx+paths.shape[0]]
-    
-    # # Plot each asset/currency
-    # for i in range(9):
-    #     ax = axes[i]
+    # Plot each asset
+    for i in range(assets_to_show):
+        ax = axes[i]
         
-    #     for sim in range(3):  # 3 paths
-    #         # Historical part (solid line)
-    #         ax.plot(plot_dates[:current_matrix_idx+1], 
-    #                 paths[:current_matrix_idx+1, i, sim], 
-    #                 'b-', linewidth=2)
-            
-    #         # Simulated part (dashed line)
-    #         ax.plot(plot_dates[current_matrix_idx:], 
-    #                 paths[current_matrix_idx:, i, sim], 
-    #                 'r--', linewidth=1.5)
+        # Plot original simulation paths
+        for sim in range(3):
+            ax.plot(key_dates_list, paths[:, i, sim], 'b-', alpha=0.5, linewidth=1.5)
         
-    #     # Vertical line at current date
-    #     ax.axvline(x=plot_dates[current_matrix_idx], color='black', linestyle='-', linewidth=1)
+        # Plot shifted path for asset 2
+        if i == 2:
+            ax.plot(key_dates_list, shifted_path[:, i], 'r--', linewidth=2, label='Shifted')
         
-    #     # Set title and format
-    #     ax.set_title(labels[i])
-    #     ax.set_xlabel('Date')
-    #     ax.set_ylabel('Value')
-    #     ax.grid(True, alpha=0.3)
+        # Vertical line at current date
+        ax.axvline(x=current_date, color='black', linestyle='-', linewidth=1, label='Current Date')
         
-    #     # Format dates on x-axis
-    #     ax.tick_params(axis='x', rotation=45)
+        # Set title and format
+        ax.set_title(f"Asset: {labels[i]}")
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Value')
+        ax.grid(True, alpha=0.3)
+        
+        # Format dates on x-axis
+        plt.setp(ax.get_xticklabels(), rotation=45)
+         
+        # Add legend (only for the shifted asset)
+        if i == 2:
+            ax.legend(['Path 1', 'Path 2', 'Path 3', 'Shifted', 'Current Date'])
+        else:
+            ax.legend(['Path 1', 'Path 2', 'Path 3', 'Current Date'])
     
-    # # Add a legend
-    # fig.legend(['Historical', 'Simulated', 'Current Date'], 
-    #            loc='upper center', 
-    #            bbox_to_anchor=(0.5, 0.98), 
-    #            ncol=3)
+    # ax = axes[5]
+        
+    # # Plot original simulation paths
+    # for sim in range(3):
+    #     ax.plot(key_dates_list, paths[:, i, sim], 'b-', alpha=0.5, linewidth=1.5)
     
-    # plt.tight_layout(rect=[0, 0, 1, 0.96])
-    # plt.savefig('simulated_paths.png', dpi=300)
-    # plt.show()
+    # # Plot shifted path for asset 2
+    # if i == 2:
+    #     ax.plot(key_dates_list, shifted_path[:, i], 'r--', linewidth=2, label='Shifted')
+    
+    # # Vertical line at current date
+    # ax.axvline(x=current_date, color='black', linestyle='-', linewidth=1, label='Current Date')
+    
+    # # Set title and format
+    # ax.set_title(f"Asset: {labels[i]}")
+    # ax.set_xlabel('Date')
+    # ax.set_ylabel('Value')
+    # ax.grid(True, alpha=0.3)
+    
+    # # Format dates on x-axis
+    # plt.setp(ax.get_xticklabels(), rotation=45)
+    
+    # # Add legend (only for the shifted asset)
+    # if i == 2:
+    #     ax.legend(['Path 1', 'Path 2', 'Path 3', 'Shifted', 'Current Date'])
+    # else:
+    #     ax.legend(['Path 1', 'Path 2', 'Path 3', 'Current Date'])
+    
+    
+    
+    plt.tight_layout()
+    plt.savefig('simulated_paths.png', dpi=300)
+    plt.show()
 
 if __name__ == "__main__":
     visualize_paths()

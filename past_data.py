@@ -32,7 +32,7 @@ class PastData:
         """
         self.market_data = market_data
         self.date_handler = date_handler
-        self.trading_days_per_year = 252
+        self.trading_days_per_year = 262
         
         # Get the list of domestic and foreign indices
         self.domestic_indices = market_data.domestic_indices
@@ -112,12 +112,12 @@ class PastData:
             The new row added to the past matrix
         """
         # Get T0 date for interest rate calculations
-        ref_date ='TO'
+        ref_date ='T0'
         print(ref_date)
         
         # Calculate the time fraction (in years) since T0
         # Using actual calendar days divided by 252 for simplicity
-        time_in_years = self.date_handler._count_trading_days(self.date_handler.keydates(ref_date),date) / self.trading_days_per_year
+        time_in_years = self.date_handler._count_trading_days(self.date_handler.key_dates[ref_date],date) / self.trading_days_per_year
         print(time_in_years)
         
         
