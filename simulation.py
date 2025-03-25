@@ -417,6 +417,4 @@ class Simulation:
             sigma_vector[i] = volatilities[i]
             sigma_vectors.append(sigma_vector)
         
-        print(sigma_vectors)
-        
         return sigma_vectors

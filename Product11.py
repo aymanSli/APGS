@@ -68,6 +68,7 @@ class Product11:
             'T4': 4,
             'Tc': 5
         }
+        
     
     def _find_date_position_in_grid(self, date):
         """
@@ -113,7 +114,7 @@ class Product11:
         float
             Domestic interest rate
         """
-        return self.interest_rates.get(self.domestic_currency, 0.0)
+        return self.interest_rates[0]
     
     def get_asset_value(self, path, index_name, date_key):
         """
@@ -175,7 +176,7 @@ class Product11:
         else:
             return 0.0
     
-    def calculate_dividend(self, t_i, path):
+    def calculate_dividend(self, t_i, path,excluded_indices=None):
         """
         Calculate the dividend for a specific observation date.
         
@@ -185,19 +186,24 @@ class Product11:
             Key name for the observation date (e.g., 'T1', 'T2')
         path : numpy.ndarray
             Combined matrix of past data and simulated trajectories
+        excluded_indices : List
+            list of excluded ( default value is self.excluded_indices)
             
         Returns:
         --------
         tuple
             (dividend_amount, best_index, annual_return)
         """
+        if excluded_indices is None:
+            excluded_indices = self.excluded_indices
+        
         # Get the previous observation date key (Ti-1 or T0 if this is T1)
         prev_key = f"T{int(t_i[1:]) - 1}" if int(t_i[1:]) > 1 else "T0"
         
         # Calculate annual returns for each non-excluded index
         annual_returns = {}
         for idx in self.indices:
-            if idx in self.excluded_indices:
+            if idx in excluded_indices:
                 continue
             
             # Get true asset values for current and previous dates

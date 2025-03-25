@@ -140,6 +140,7 @@ class MarketData:
         # Create rates matrix (for all indices, in the same order)
         rate_columns = [self.rate_codes[self.index_currencies[idx]] for idx in self.indices]
         self.rates_matrix = rates_df[rate_columns].values
+
     
     def get_asset_price(self, index_name, date_index):
         """
