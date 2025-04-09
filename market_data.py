@@ -46,8 +46,9 @@ class MarketData:
         
         # Define currencies for each index
         self.index_currencies = {
-            'ASX200': 'AUD',
+            
             'DAX': 'EUR',
+            'ASX200': 'AUD',
             'FTSE100': 'GBP',
             'NASDAQ100': 'USD',
             'SMI': 'CHF'
@@ -63,8 +64,8 @@ class MarketData:
         
         # Interest rate codes
         self.rate_codes = {
-            'AUD': 'RAUD',
             'EUR': 'REUR',
+            'AUD': 'RAUD',
             'GBP': 'RGBP',
             'USD': 'RUSD',
             'CHF': 'RCHF'

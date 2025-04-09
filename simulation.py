@@ -26,7 +26,7 @@ class Simulation:
         self.date_handler = date_handler
         
         # Default simulation parameters
-        self.num_simulations = 1000
+        self.num_simulations =100
         self.trading_days_per_year = 262  # Standard convention for annualization
         
         # Indices and asset counts for indexing
@@ -174,7 +174,7 @@ class Simulation:
         # Determine the starting row for the shift
         if is_key_date:
             # Simple case: Start from this key date
-            start_row = key_dates.index(current_date)
+            start_row = key_dates.index(current_date) + 1
         else:
             # Complex case: Start from the next key date
             next_key_date = self.date_handler.get_next_key_date(current_date)
@@ -191,6 +191,47 @@ class Simulation:
             shifted_path[i, asset_idx] *= shift_factor
         
         return shifted_path
+    
+    
+    def shift_all_paths(self,
+                    paths: np.ndarray,
+                    asset_idx: int,
+                    shift_factor: float,
+                        current_date: datetime) -> np.ndarray:
+        """
+        Shift a specific asset's price across multiple simulated paths for sensitivity analysis.
+        
+        Parameters:
+        -----------
+        paths : 3D array of simulated price paths with shape (time_steps, num_assets, num_paths)
+        asset_idx : Index of the asset to shift
+        shift_factor : Multiplication factor to apply (e.g., 1.01 for +1%)
+        current_date : Current date
+        
+        Returns:
+        --------
+        np.ndarray : 3D array of shifted paths with the same shape as the input
+        """
+        # Create a copy of the paths to avoid modifying the original
+        shifted_paths = paths.copy()
+        
+        # Apply the shift_path function to each individual path
+        for path_idx in range(paths.shape[2]):
+            # Extract the 2D path (time_steps × num_assets)
+            path = paths[:, :, path_idx]
+            
+            # Apply the shift to this individual path
+            shifted_path = self.shift_path(
+                path=path,
+                asset_idx=asset_idx,
+                shift_factor=shift_factor,
+                current_date=current_date
+            )
+            
+            # Store the shifted path back in the 3D array
+            shifted_paths[:, :, path_idx] = shifted_path
+        
+        return shifted_paths
     
     def _get_interest_rates(self, current_date: datetime) -> Dict[str, float]:
         """

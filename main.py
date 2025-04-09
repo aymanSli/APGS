@@ -41,7 +41,7 @@ class StructuredProductSimulation:
         
         # Setup simulation variables
         self.running = True
-        self.current_date = self.date_handler.key_dates['T0']
+        
         
         # Track important information
         self.excluded_indices = []
@@ -102,35 +102,41 @@ class StructuredProductSimulation:
         
         # Initialize Monte Carlo
         print("- Initializing MonteCarlo...")
-        self.monte_carlo = MonteCarlo(self.date_handler, self.product, self.simulation, self.sim_params, num_samples=1000)
+        self.monte_carlo = MonteCarlo(self.date_handler, self.product, self.simulation, self.sim_params)
+        
+        self.current_date = self.date_handler.key_dates['T0']
+        self.last_rebalancing_date=self.date_handler.key_dates['T0']
         
         # Initialize the past matrix with data up to T0
-        self.past_matrix = self.past_data.initialize_past_matrix(self.date_handler.key_dates['T0'])
+        self.past_matrix = self.past_data.initialize_past_matrix(self.current_date)
+        # print(self.past_matrix)
         
         # Get the domestic interest rate
-        date_index = self.market_data.get_date_index(self.date_handler.key_dates['T0'])
+        date_index = self.market_data.get_date_index(self.current_date)
         self.risk_free_rate = self.market_data.get_interest_rate('EUR', date_index)
         
         # Initialize portfolio with initial product price (1000€)
         print("- Initializing Portfolio...")
-        self.portfolio = DeltaHedgingPortfolio(1000.0, self.risk_free_rate)
+        self.portfolio = DeltaHedgingPortfolio(1000.0,self.date_handler,self.market_data)
         
         # Initial rebalance at T0
         initial_current_prices = self.past_data.get_spot_prices()
-        self.product.update_interest_rates(self.date_handler.key_dates['T0'])
+        self.product.update_interest_rates(self.current_date)
         
         # Calculate initial deltas
         self.deltas = self.monte_carlo.calculate_deltas(
             self.past_matrix, 
-            self.date_handler.key_dates['T0']
+            self.current_date
         )
+        # print(self.deltas)
         
         # Perform initial rebalance
         self.portfolio.rebalance(
             self.deltas,
             initial_current_prices,
-            self.date_handler.key_dates['T0'],
-            self.date_handler.key_dates['T0']
+            self.current_date,
+            self.last_rebalancing_date,
+            self.risk_free_rate
         )
     
     def run(self):
@@ -158,6 +164,8 @@ class StructuredProductSimulation:
         print(f"  Cash: €{portfolio_state['cash']:.2f}")
         print(f"  Total Position Value: €{portfolio_state['total_position_value']:.2f}")
         print(f"  Total Portfolio Value: €{portfolio_state['total_value']:.2f}")
+        print(f"  Interest rate: {self.risk_free_rate*100} %")
+        
         
         # Display product status
         print("\nPRODUCT STATUS:")
@@ -177,7 +185,7 @@ class StructuredProductSimulation:
         # Display next key date
         next_key_date = self.date_handler.get_next_key_date(self.current_date)
         if next_key_date:
-            days_to_next = (next_key_date - self.current_date).days
+            days_to_next = self.date_handler._count_trading_days(self.current_date,next_key_date)
             print(f"\nNext key date in {days_to_next} days")
     
     def get_user_action(self):
@@ -226,7 +234,9 @@ class StructuredProductSimulation:
             print("Number of days must be positive.")
             return
         
-        next_date = self.current_date + timedelta(days=days)
+        curr_index=self.date_handler.get_date_index(self.current_date)
+        next_index = curr_index+days
+        next_date = self.date_handler.get_date_from_index(next_index)
         
         # Check for key dates in between
         key_dates_between = []
@@ -250,6 +260,8 @@ class StructuredProductSimulation:
                 print(f"\nAdvancing to key date {key}: {date.strftime(self.date_format)}...")
                 self.current_date = date
                 self.update_past_matrix()
+                date_index = self.market_data.get_date_index(self.current_date)
+                self.risk_free_rate = self.market_data.get_interest_rate('EUR', date_index)
                 self.process_key_date(key)
                 
             # If next_date is after all key dates, advance to it
@@ -257,12 +269,16 @@ class StructuredProductSimulation:
                 print(f"\nAdvancing to {next_date.strftime(self.date_format)}...")
                 self.current_date = next_date
                 self.update_past_matrix()
+                date_index = self.market_data.get_date_index(self.current_date)
+                self.risk_free_rate = self.market_data.get_interest_rate('EUR', date_index)
                 
         else:
             # No key dates in between, just advance to next_date
             print(f"\nAdvancing to {next_date.strftime(self.date_format)}...")
             self.current_date = next_date
             self.update_past_matrix()
+            date_index = self.market_data.get_date_index(self.current_date)
+            self.risk_free_rate = self.market_data.get_interest_rate('EUR', date_index)
     
     def jump_to_next_key_date(self):
         """Jump directly to the next key date."""
@@ -282,6 +298,8 @@ class StructuredProductSimulation:
         print(f"\nJumping to key date {key_name}: {next_key_date.strftime(self.date_format)}...")
         self.current_date = next_key_date
         self.update_past_matrix()
+        date_index = self.market_data.get_date_index(self.current_date)
+        self.risk_free_rate = self.market_data.get_interest_rate('EUR', date_index)
         self.process_key_date(key_name)
     
     def update_past_matrix(self):
@@ -306,21 +324,20 @@ class StructuredProductSimulation:
             spot_prices = self.past_data.get_spot_prices()
             self.product.update_interest_rates(self.current_date)
             
-            # Get the previous key date
-            prev_key_date = self.date_handler.get_previous_key_date(self.current_date)
             
             # Unwind portfolio
             unwind_result = self.portfolio.unwind_portfolio(
                 spot_prices,
                 self.current_date,
-                prev_key_date
+                self.last_rebalancing_date,
+                self.risk_free_rate
             )
             
             print(f"Portfolio unwound. Final cash: €{unwind_result['cash']:.2f}")
             print(f"P&L from unwinding: €{unwind_result['pnl']:.2f}")
             
             # Calculate final settlement
-            final_settlement = payoff - unwind_result['cash']
+            final_settlement = unwind_result['cash'] - payoff
             
             print(f"Final settlement (payoff - portfolio value): €{final_settlement:.2f}")
             
@@ -378,7 +395,6 @@ class StructuredProductSimulation:
         """Rebalance the portfolio based on new deltas."""
         print("\nRebalancing portfolio...")
         
-        
         # Calculate new deltas
         self.deltas = self.monte_carlo.calculate_deltas(
             self.past_matrix, 
@@ -389,16 +405,16 @@ class StructuredProductSimulation:
         spot_prices = self.past_data.get_spot_prices()
         self.product.update_interest_rates(self.current_date)
         
-        # Get previous rebalance date
-        prev_key_date = self.date_handler.get_previous_key_date(self.current_date)
         
         # Perform rebalance
         rebalance_result = self.portfolio.rebalance(
             self.deltas,
             spot_prices,
             self.current_date,
-            prev_key_date
+            self.last_rebalancing_date,
+            self.risk_free_rate
         )
+        self.last_rebalancing_date=self.current_date
         
         print(f"Rebalance complete.")
         print(f"Cash after rebalance: €{rebalance_result['cash']:.2f}")
@@ -425,12 +441,12 @@ class StructuredProductSimulation:
         print("=" * 60)
         
         print(f"\nCash: €{portfolio_state['cash']:.2f}")
-        
+        print(f"  \nInterest rate: {self.risk_free_rate*100} %")
         print("\nDelta Positions:")
-        for asset, delta in portfolio_state['deltas'].items():
-            price = spot_prices.get(asset, 0)
-            position_value = portfolio_state['position_values'].get(asset, 0)
-            print(f"  {asset}: Delta {delta:.4f}, Price €{price:.2f}, Value €{position_value:.2f}")
+        for i in range (9):
+            price = spot_prices[i]
+            position_value = portfolio_state['position_values'][i]
+            print(f"  {self.portfolio.column_names[i]}: Delta {self.portfolio.deltas[i]:.4f}, Price €{price:.2f}, Value €{position_value:.2f}")
         
         print(f"\nTotal Position Value: €{portfolio_state['total_position_value']:.2f}")
         print(f"Total Portfolio Value: €{portfolio_state['total_value']:.2f}")
@@ -472,6 +488,7 @@ class StructuredProductSimulation:
         
         print("\nFinal Portfolio State:")
         print(f"  Cash: €{portfolio_state['cash']:.2f}")
+        print(f"  Interest rate: {self.risk_free_rate*100} %")
         print(f"  Total Position Value: €{portfolio_state['total_position_value']:.2f}")
         print(f"  Total Portfolio Value: €{portfolio_state['total_value']:.2f}")
         

@@ -7,6 +7,7 @@ from dates import DateHandler
 from market_data import MarketData
 from past_data import PastData
 from Product11 import Product11
+from simulation import Simulation
 
 def simple_test_product11():
     print("=== SIMPLE PRODUCT 11 TEST ===\n")
@@ -38,12 +39,22 @@ def simple_test_product11():
     
     # 4. Initialize PastData to create the path
     past_data = PastData(market_data, date_handler)
+    simulation = Simulation(market_data, date_handler)
     
     # 5. Initialize the path with data for all key dates
     # Use the final date (Tc) to get all historical data
     final_date = date_handler.get_key_date('Tc')
     path = past_data.initialize_past_matrix(final_date)
+    # path_up = simulation.shift_path(
+    #             path, 3, 1 + 0.5, date_handler.get_key_date('T0')
+    #         )
+    path_down = simulation.shift_path(
+                path, 3, 1 - 0.2, date_handler.get_key_date('T0')
+            )
+    print("\n=== TEST NORM ===\n")
     print(path)
+    print("\n=== TEST DOWN ===\n")
+    print(path_down)
     
     print(f"Path matrix created with shape: {path.shape}")
     
@@ -78,8 +89,15 @@ def simple_test_product11():
     
     # print(f"\nMinimum guarantee activated: {payoff_result['guarantee_activated']}")
     current_date=datetime(2013, 1, 4)
+    print("\n=== TEST NORM ===\n")
     lifecycle=product.simulate_product_lifecycle(path,current_date)
     product.print_product_lifecycle(lifecycle)
+    # print("\n=== TEST UP ===\n")
+    # lifecycle1=product.simulate_product_lifecycle(path_up,current_date)
+    # product.print_product_lifecycle(lifecycle1)
+    print("\n=== TEST DOWN ===\n")
+    lifecycle2=product.simulate_product_lifecycle(path_down,current_date)
+    product.print_product_lifecycle(lifecycle2)
     print("\n=== TEST COMPLETE ===")
 
 if __name__ == "__main__":

@@ -294,11 +294,11 @@ class DateHandler:
         # Find the previous key date
         prev_date =self.key_dates['T0']
         for key, key_date in sorted_dates:
-            print("hey")
+            # print("hey")
             if key_date >= date:
                 break
             prev_date = key_date
-        print("done")        
+        # print("done")        
         return prev_date
     
     def get_key_date(self, key_name):
@@ -337,19 +337,6 @@ class DateHandler:
         date = self.get_key_date(key_name)
         return self.date_to_index.get(date)
     
-    def get_current_date_index(self):
-        """
-        Get the index of the current date in the market_dates list.
-        
-        Returns:
-        --------
-        int
-            Index of the current date in the market_dates list
-        """
-        if self.current_date is None:
-            raise ValueError("Current date is not set")
-            
-        return self.date_to_index.get(self.current_date)
     
     def get_time_fraction(self, start_date, end_date):
         """

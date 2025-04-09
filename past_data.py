@@ -84,8 +84,7 @@ class PastData:
         # Get all grid dates from T0 up to current_date
         valid_dates = [date for date in self.grid_dates if t0_date <= date < current_date]
         valid_dates.append(current_date)
-        print("oi")
-        print(valid_dates)
+
         
         # Sort dates to ensure chronological order
         valid_dates.sort()
@@ -113,12 +112,11 @@ class PastData:
         """
         # Get T0 date for interest rate calculations
         ref_date ='T0'
-        print(ref_date)
+    
         
         # Calculate the time fraction (in years) since T0
         # Using actual calendar days divided by 252 for simplicity
         time_in_years = self.date_handler._count_trading_days(self.date_handler.key_dates[ref_date],date) / self.trading_days_per_year
-        print(time_in_years)
         
         
         # Get grid index for this date
@@ -217,23 +215,26 @@ class PastData:
         if not self.past_matrix:
             raise ValueError("Past matrix is empty")
         
-        last_row = self.past_matrix[-1]
+        # last_row = self.past_matrix[-1]
         
-        spot_prices = {}
+        # spot_prices = {}
         
-        # Domestic assets
-        for i, idx in enumerate(self.domestic_indices):
-            spot_prices[idx] = last_row[i]
+        # # Domestic assets
+        # for i, idx in enumerate(self.domestic_indices):
+        #     spot_prices[idx] = last_row[i]
         
-        # Foreign assets * exchange rates
-        start_idx = len(self.domestic_indices)
-        for i, idx in enumerate(self.foreign_indices):
-            spot_prices[idx] = last_row[start_idx + i]
+        # # Foreign assets * exchange rates
+        # start_idx = len(self.domestic_indices)
+        # for i, idx in enumerate(self.foreign_indices):
+        #     spot_prices[idx] = last_row[start_idx + i]
         
-        # Exchange rates
-        start_idx = len(self.domestic_indices) + len(self.foreign_indices)
-        for i, idx in enumerate(self.foreign_indices):
-            currency = self.market_data.index_currencies[idx]
-            spot_prices[f"FX_{currency}"] = last_row[start_idx + i]
+        # # Exchange rates
+        # start_idx = len(self.domestic_indices) + len(self.foreign_indices)
+        # for i, idx in enumerate(self.foreign_indices):
+        #     currency = self.market_data.index_currencies[idx]
+        #     spot_prices[f"FX_{currency}"] = last_row[start_idx + i]
         
-        return spot_prices
+        return self.past_matrix[-1]
+    
+    
+        

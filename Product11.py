@@ -138,9 +138,6 @@ class Product11:
             
         row_idx = self.key_date_to_row[date_key]
         
-        print(row_idx)
-        print(len(path))
-        
         if row_idx >= len(path):
             raise ValueError(f"Path does not contain data for {date_key} (row {row_idx})")
         
@@ -171,7 +168,6 @@ class Product11:
         # Calculate S = SX / (X*exp(ri*(t-T0))) * exp(ri*(t-T0))
         if x_adj_value > 0:  # Avoid division by zero
             # The foreign asset price is SX / X
-            print((sx_value * np.exp(r_i*term)) / x_adj_value)
             return (sx_value * np.exp(r_i*term)) / x_adj_value 
         else:
             return 0.0
@@ -318,7 +314,7 @@ class Product11:
         
         return basket_perf
     
-    def discount_dividend(self, dividend, from_key, to_key="Tc"):
+    def account_dividend(self, dividend, from_key, to_key="Tc"):
         """
         Discount a dividend from one date to another using the domestic interest rate.
         
@@ -402,7 +398,7 @@ class Product11:
             dividend, best_index, best_return = self.calculate_dividend(t_i, path)
             
             # Calculate compounded dividend (accounted to Tc)
-            compounded_dividend = self.discount_dividend(dividend, t_i, "Tc")
+            compounded_dividend = self.account_dividend(dividend, t_i, "Tc")
             
             # Check if minimum guarantee condition is met
             guarantee_activated = self.check_minimum_guarantee(t_i, path)
@@ -487,44 +483,45 @@ class Product11:
         
         # Process each observation date
         for i in range(1, 5):
-            t_i = f"T{i}"
-            
+            if i < len(path):
+                t_i = f"T{i}"
                 
-            # Calculate dividend
-            dividend, best_index, best_return = self.calculate_dividend(t_i, path)
+                    
+                # Calculate dividend
+                dividend, best_index, best_return = self.calculate_dividend(t_i, path)
+                
+                # Calculate compounded dividend (accounted to Tc)
+                compounded_dividend = self.account_dividend(dividend, t_i, "Tc")
+                
+                # Check if minimum guarantee condition is met
+                guarantee_check = self.check_minimum_guarantee(t_i, path)
+                
+                # Store state at this observation date
+                lifecycle[t_i] = {
+                    'date': self.date_handler.key_dates[t_i],
+                    'dividend': dividend,
+                    'compounded_dividend': compounded_dividend,
+                    'best_index': best_index,
+                    'best_return': best_return,
+                    'excluded_indices': self.excluded_indices.copy(),
+                    'guarantee_activated': self.guarantee_activated,
+                    'guarantee_triggered_now': guarantee_check and not lifecycle[f"T{i-1}"]['guarantee_activated']
+                }
+        
+        if len(path)==6:
+            final_perf = self.calculate_final_performance(path)
+            final_payoff = self.calculate_final_payoff(path)
+            total_compounded_dividends = sum(data['compounded_dividend'] for key, data in lifecycle.items() if 'compounded_dividend' in data)
             
-            # Calculate compounded dividend (accounted to Tc)
-            compounded_dividend = self.discount_dividend(dividend, t_i, "Tc")
-            
-            # Check if minimum guarantee condition is met
-            guarantee_check = self.check_minimum_guarantee(t_i, path)
-            
-            # Store state at this observation date
-            lifecycle[t_i] = {
-                'date': self.date_handler.key_dates[t_i],
-                'dividend': dividend,
-                'compounded_dividend': compounded_dividend,
-                'best_index': best_index,
-                'best_return': best_return,
+            lifecycle['Tc'] = {
+                'date': self.date_handler.key_dates['Tc'],
+                'final_performance': final_perf,
+                'final_payoff': final_payoff,
+                'total_compounded_dividends': total_compounded_dividends,
+                'total_payoff': final_payoff + total_compounded_dividends,
                 'excluded_indices': self.excluded_indices.copy(),
-                'guarantee_activated': self.guarantee_activated,
-                'guarantee_triggered_now': guarantee_check and not lifecycle[f"T{i-1}"]['guarantee_activated']
+                'guarantee_activated': self.guarantee_activated
             }
-        
-        
-        final_perf = self.calculate_final_performance(path)
-        final_payoff = self.calculate_final_payoff(path)
-        total_compounded_dividends = sum(data['compounded_dividend'] for key, data in lifecycle.items() if 'compounded_dividend' in data)
-        
-        lifecycle['Tc'] = {
-            'date': self.date_handler.key_dates['Tc'],
-            'final_performance': final_perf,
-            'final_payoff': final_payoff,
-            'total_compounded_dividends': total_compounded_dividends,
-            'total_payoff': final_payoff + total_compounded_dividends,
-            'excluded_indices': self.excluded_indices.copy(),
-            'guarantee_activated': self.guarantee_activated
-        }
         
         return lifecycle
     
