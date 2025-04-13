@@ -282,5 +282,4 @@ class DeltaHedgingPortfolio:
             'trades': trades,
             'initial_value': initial_value,
             'final_value': self.cash,  # After unwinding, all value is in cash
-            'pnl': self.cash - initial_value
         }

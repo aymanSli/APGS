@@ -10,7 +10,7 @@ class MonteCarlo:
     Provides deltas for all assets in a dictionary format.
     """
     
-    def __init__(self,date_handler, product, simulation,sim_params, num_samples=100, fd_steps=0.1):
+    def __init__(self,date_handler, product, simulation,sim_params, num_samples=10, fd_steps=0.1):
         """
         Initialize the MonteCarlo class.
         

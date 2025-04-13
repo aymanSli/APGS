@@ -164,6 +164,8 @@ class StructuredProductSimulation:
         print(f"  Cash: €{portfolio_state['cash']:.2f}")
         print(f"  Total Position Value: €{portfolio_state['total_position_value']:.2f}")
         print(f"  Total Portfolio Value: €{portfolio_state['total_value']:.2f}")
+        print(f"  Liquidative Value: €{self.monte_carlo.price:.2f}")
+        print(f"  PnL: €{portfolio_state['total_value']-self.monte_carlo.price:.2f}")
         print(f"  Interest rate: {self.risk_free_rate*100} %")
         
         
@@ -334,7 +336,6 @@ class StructuredProductSimulation:
             )
             
             print(f"Portfolio unwound. Final cash: €{unwind_result['cash']:.2f}")
-            print(f"P&L from unwinding: €{unwind_result['pnl']:.2f}")
             
             # Calculate final settlement
             final_settlement = unwind_result['cash'] - payoff
