@@ -68,7 +68,7 @@ class MonteCarlo:
         r_d = self.product.get_domestic_rate()
         
         # Calculate time to maturity
-        time_to_maturity = self.date_handler._count_trading_days(current_date,tc_date)/ 262  # Assuming 252 trading days per year
+        time_to_maturity = self.date_handler._count_trading_days(current_date,tc_date)/ 262  # Assuming 262 trading days per year
         volatilities,cholesky_matrix = self.sim_params.calculate_parameters(current_date)
         discount_factor = np.exp(-r_d * time_to_maturity)
         
@@ -80,10 +80,10 @@ class MonteCarlo:
             cholesky_matrix=cholesky_matrix
         )
         
-        if current_date not in key_dates : 
-            current_row=key_dates.index(current_date)
-        else:
-            current_row=key_dates.index(self.date_handler.get_previous_key_date(current_date))
+        # if current_date not in key_dates : 
+        #     current_row=key_dates.index(current_date)
+        # else:
+        #     current_row=key_dates.index(self.date_handler.get_previous_key_date(current_date))
         
         # Calculate price from base paths (needed for delta computation)
         base_payoffs = []
@@ -104,7 +104,7 @@ class MonteCarlo:
         
         for asset_index in range(num_assets):
             # Get current spot price for this asset
-            spot = past_matrix[current_row, asset_index]
+            spot = past_matrix[-1, asset_index]
             
             # Create shifted paths for this asset (up)
             shifted_up = self.simulation.shift_all_paths(
