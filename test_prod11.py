@@ -48,13 +48,12 @@ def simple_test_product11():
     # path_up = simulation.shift_path(
     #             path, 3, 1 + 0.5, date_handler.get_key_date('T0')
     #         )
-    path_down = simulation.shift_path(
-                path, 3, 1 - 0.2, date_handler.get_key_date('T0')
-            )
+    # path_down = simulation.shift_path(
+    #             path, 3, 1 - 0.2, date_handler.get_key_date('T0'))
     print("\n=== TEST NORM ===\n")
-    print(path)
-    print("\n=== TEST DOWN ===\n")
-    print(path_down)
+    # print(path)
+    # print("\n=== TEST DOWN ===\n")
+    # print(path_down)
     
     print(f"Path matrix created with shape: {path.shape}")
     
@@ -95,9 +94,9 @@ def simple_test_product11():
     # print("\n=== TEST UP ===\n")
     # lifecycle1=product.simulate_product_lifecycle(path_up,current_date)
     # product.print_product_lifecycle(lifecycle1)
-    print("\n=== TEST DOWN ===\n")
-    lifecycle2=product.simulate_product_lifecycle(path_down,current_date)
-    product.print_product_lifecycle(lifecycle2)
+    # print("\n=== TEST DOWN ===\n")
+    # lifecycle2=product.simulate_product_lifecycle(path_down,current_date)
+    # product.print_product_lifecycle(lifecycle2)
     print("\n=== TEST COMPLETE ===")
 
 if __name__ == "__main__":

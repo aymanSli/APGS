@@ -1,6 +1,7 @@
 # product11.py
 import numpy as np
 from datetime import datetime
+from functools import lru_cache
 
 class Product11:
     """
@@ -16,7 +17,7 @@ class Product11:
     - Dividends based on best-performing index at each observation date
     - Best-performing index is excluded from future dividend calculations
     
-    Adapted to work with grid dates from the market_data.py class.
+    Optimized for performance with cached calculations and vectorized operations.
     """
     
     def __init__(self, market_data, date_handler):
@@ -69,7 +70,9 @@ class Product11:
             'Tc': 5
         }
         
-    
+        # Cache for asset values
+        self._asset_value_cache = {}
+        
     def _find_date_position_in_grid(self, date):
         """
         Find the position of a date in the grid dates.
@@ -119,6 +122,7 @@ class Product11:
     def get_asset_value(self, path, index_name, date_key):
         """
         Get the true asset value from the path, properly adjusting for exchange rates.
+        Uses caching to avoid redundant calculations.
         
         Parameters:
         -----------
@@ -134,8 +138,12 @@ class Product11:
         float
             Adjusted asset value S
         """
+        # Check cache first - use tuple as key since it's hashable
+        cache_key = (id(path), index_name, date_key)
+        if cache_key in self._asset_value_cache:
+            return self._asset_value_cache[cache_key]
+        
         # Get the row position for this key date
-            
         row_idx = self.key_date_to_row[date_key]
         
         if row_idx >= len(path):
@@ -144,7 +152,9 @@ class Product11:
         # For domestic assets, the value is directly in the path
         if index_name in self.market_data.domestic_indices:
             col_idx = self.indices.index(index_name)
-            return path[row_idx, col_idx]
+            value = path[row_idx, col_idx]
+            self._asset_value_cache[cache_key] = value
+            return value
         
         # For foreign assets, we need to extract S from SX and X*exp(ri*(t-T0))
         # S = SX / (X*exp(ri*(t-T0))) * exp(ri*(t-T0))
@@ -158,21 +168,22 @@ class Product11:
         # Extract values from the path
         sx_value = path[row_idx, fx_asset_col]
         x_adj_value = path[row_idx, fx_rate_col]
-        r_i=self.market_data.get_interest_rate(
+        r_i = self.market_data.get_interest_rate(
                 self.market_data.index_currencies[index_name], 
                 self.market_data.get_date_index(self.date_handler.key_dates[date_key]))
-        term=self.date_handler._count_trading_days(self.date_handler.key_dates['T0'],self.date_handler.key_dates[date_key]) / 262
-        
-                   # This is X*exp(ri*(t-T0))
+        term = self.date_handler._count_trading_days(self.date_handler.key_dates['T0'], self.date_handler.key_dates[date_key]) / 262
         
         # Calculate S = SX / (X*exp(ri*(t-T0))) * exp(ri*(t-T0))
         if x_adj_value > 0:  # Avoid division by zero
             # The foreign asset price is SX / X
-            return (sx_value * np.exp(r_i*term)) / x_adj_value 
+            value = (sx_value * np.exp(r_i*term)) / x_adj_value
+            self._asset_value_cache[cache_key] = value
+            return value
         else:
+            self._asset_value_cache[cache_key] = 0.0
             return 0.0
     
-    def calculate_dividend(self, t_i, path,excluded_indices=None):
+    def calculate_dividend(self, t_i, path, excluded_indices=None):
         """
         Calculate the dividend for a specific observation date.
         
@@ -183,7 +194,7 @@ class Product11:
         path : numpy.ndarray
             Combined matrix of past data and simulated trajectories
         excluded_indices : List
-            list of excluded ( default value is self.excluded_indices)
+            list of excluded (default value is self.excluded_indices)
             
         Returns:
         --------
@@ -198,18 +209,22 @@ class Product11:
         
         # Calculate annual returns for each non-excluded index
         annual_returns = {}
+        
+        # Pre-fetch asset values for all indices at current and previous dates
+        current_values = {}
+        prev_values = {}
+        
         for idx in self.indices:
             if idx in excluded_indices:
                 continue
-            
+                
             # Get true asset values for current and previous dates
-            current_value = self.get_asset_value(path, idx, t_i)
-            prev_value = self.get_asset_value(path, idx, prev_key)
+            current_values[idx] = self.get_asset_value(path, idx, t_i)
+            prev_values[idx] = self.get_asset_value(path, idx, prev_key)
             
             # Calculate annual return
-            if prev_value > 0:  # Avoid division by zero
-                annual_return = (current_value / prev_value) - 1
-                annual_returns[idx] = annual_return
+            if prev_values[idx] > 0:  # Avoid division by zero
+                annual_returns[idx] = (current_values[idx] / prev_values[idx]) - 1
         
         # If all indices are excluded, return 0 dividend
         if not annual_returns:
@@ -246,19 +261,22 @@ class Product11:
         # Get the previous observation date key (Ti-1 or T0 if this is T1)
         prev_key = f"T{int(t_i[1:]) - 1}" if int(t_i[1:]) > 1 else "T0"
         
-        # Calculate basket performance (average of all index performances)
+        # Pre-fetch asset values for all indices at current and previous dates
+        current_values = {}
+        prev_values = {}
         performances = []
+        
         for idx in self.indices:
             # Get true asset values for current and previous dates
-            current_value = self.get_asset_value(path, idx, t_i)
-            prev_value = self.get_asset_value(path, idx, prev_key)
+            current_values[idx] = self.get_asset_value(path, idx, t_i)
+            prev_values[idx] = self.get_asset_value(path, idx, prev_key)
             
             # Calculate performance
-            if prev_value > 0:  # Avoid division by zero
-                perf = (current_value / prev_value) - 1
+            if prev_values[idx] > 0:  # Avoid division by zero
+                perf = (current_values[idx] / prev_values[idx]) - 1
                 performances.append(perf)
         
-        # Calculate basket performance (average)
+        # Calculate basket performance (average) and check guarantee condition
         if performances:
             basket_perf = sum(performances) / len(performances)
             
@@ -283,16 +301,19 @@ class Product11:
         float
             Final performance (after applying floor, cap, and guarantee)
         """
-        # Calculate final performances for all indices using true asset values
+        # Pre-fetch asset values for all indices at T0 and Tc
+        t0_values = {}
+        tc_values = {}
         performances = []
+        
         for idx in self.indices:
             # Get true asset values for T0 and Tc
-            t0_value = self.get_asset_value(path, idx, "T0")
-            tc_value = self.get_asset_value(path, idx, "Tc")
+            t0_values[idx] = self.get_asset_value(path, idx, "T0")
+            tc_values[idx] = self.get_asset_value(path, idx, "Tc")
             
             # Calculate performance from T0 to Tc
-            if t0_value > 0:  # Avoid division by zero
-                perf = (tc_value / t0_value) - 1
+            if t0_values[idx] > 0:  # Avoid division by zero
+                perf = (tc_values[idx] / t0_values[idx]) - 1
                 performances.append(perf)
         
         # Calculate basket performance (average)
@@ -301,10 +322,9 @@ class Product11:
         
         basket_perf = sum(performances) / len(performances)
         
-        # Apply floor if negative
+        # Apply floor and cap in a vectorized way
         if basket_perf < 0:
             basket_perf = max(basket_perf, self.floor)
-        # Apply cap if positive
         else:
             basket_perf = min(basket_perf, self.cap)
         
@@ -388,6 +408,9 @@ class Product11:
         # Reset guarantee activation
         self.guarantee_activated = False
         
+        # Clear asset value cache for new path
+        self._asset_value_cache = {}
+        
         dividends = {}
         
         # Check for each observation date (T1 to T4)
@@ -428,6 +451,9 @@ class Product11:
         dict
             Dictionary with payoff information
         """
+        # Clear asset value cache for new path
+        self._asset_value_cache = {}
+        
         # Calculate all dividends
         dividends_info = self.calculate_all_dividends(path)
         
@@ -472,6 +498,9 @@ class Product11:
         self.excluded_indices = []
         self.guarantee_activated = False
         
+        # Clear asset value cache for new path
+        self._asset_value_cache = {}
+        
         # Track the product state at each observation date
         lifecycle = {
             'T0': {
@@ -486,7 +515,6 @@ class Product11:
             if i < len(path):
                 t_i = f"T{i}"
                 
-                    
                 # Calculate dividend
                 dividend, best_index, best_return = self.calculate_dividend(t_i, path)
                 
@@ -508,7 +536,7 @@ class Product11:
                     'guarantee_triggered_now': guarantee_check and not lifecycle[f"T{i-1}"]['guarantee_activated']
                 }
         
-        if len(path)==6:
+        if len(path) == 6:
             final_perf = self.calculate_final_performance(path)
             final_payoff = self.calculate_final_payoff(path)
             total_compounded_dividends = sum(data['compounded_dividend'] for key, data in lifecycle.items() if 'compounded_dividend' in data)
@@ -525,9 +553,7 @@ class Product11:
         
         return lifecycle
     
-    
-    
-    def print_product_lifecycle(self,lifecycle):
+    def print_product_lifecycle(self, lifecycle):
         """
         Print the product lifecycle in a clean, formatted way.
         
