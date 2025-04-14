@@ -164,6 +164,8 @@ class StructuredProductSimulation:
         print(f"  Cash: €{portfolio_state['cash']:.2f}")
         print(f"  Total Position Value: €{portfolio_state['total_position_value']:.2f}")
         print(f"  Total Portfolio Value: €{portfolio_state['total_value']:.2f}")
+        print(f"  Liquidative Value: €{self.monte_carlo.price:.2f}")
+        print(f"  PnL: €{portfolio_state['total_value']-self.monte_carlo.price:.2f}")
         print(f"  Interest rate: {self.risk_free_rate*100} %")
         
         
@@ -279,6 +281,7 @@ class StructuredProductSimulation:
             self.update_past_matrix()
             date_index = self.market_data.get_date_index(self.current_date)
             self.risk_free_rate = self.market_data.get_interest_rate('EUR', date_index)
+            self.portfolio.cash=self.portfolio.cash*np.exp(self.risk_free_rate*(days/262))
     
     def jump_to_next_key_date(self):
         """Jump directly to the next key date."""
@@ -334,7 +337,6 @@ class StructuredProductSimulation:
             )
             
             print(f"Portfolio unwound. Final cash: €{unwind_result['cash']:.2f}")
-            print(f"P&L from unwinding: €{unwind_result['pnl']:.2f}")
             
             # Calculate final settlement
             final_settlement = unwind_result['cash'] - payoff
@@ -400,7 +402,8 @@ class StructuredProductSimulation:
             self.past_matrix, 
             self.current_date
         )
-        
+         
+         
         # Get spot prices
         spot_prices = self.past_data.get_spot_prices()
         self.product.update_interest_rates(self.current_date)

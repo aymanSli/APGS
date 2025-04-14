@@ -26,7 +26,7 @@ class Simulation:
         self.date_handler = date_handler
         
         # Default simulation parameters
-        self.num_simulations =100
+        self.num_simulations =2000
         self.trading_days_per_year = 262  # Standard convention for annualization
         
         # Indices and asset counts for indexing
@@ -110,16 +110,14 @@ class Simulation:
         else:
             # Complex case: Start from a non-key date
             # Find the previous and next key dates
-            prev_key_date = self.date_handler.get_previous_key_date(current_date)
             next_key_date = self.date_handler.get_next_key_date(current_date)
             
             # Find their indices in the key_dates list
-            prev_idx = key_dates.index(prev_key_date)
             next_idx = key_dates.index(next_key_date)
             
             # Simulate from current date to next key date
             self._simulate_to_next_key_date(
-                paths, past_matrix[-1], prev_idx, next_idx,
+                paths, past_matrix[-1], next_idx,
                 current_date, next_key_date, 
                 volatilities, cholesky_matrix, interest_rates
             )
