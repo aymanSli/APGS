@@ -12,7 +12,7 @@ class MonteCarlo:
     Provides deltas for all assets in a dictionary format.
     """
     
-    def __init__(self, date_handler, product, simulation, sim_params, num_samples=2000, fd_steps=0.1):
+    def __init__(self, date_handler, product, simulation, sim_params, num_samples=20, fd_steps=0.1):
         """
         Initialize the MonteCarlo class.
         
@@ -35,7 +35,7 @@ class MonteCarlo:
         self.fd_steps = fd_steps
         
         # Results
-        self.price = None
+        self.price = None # valeur liquidative
         self.deltas = None
     
     def _calculate_base_payoffs(self, sim_range, paths):

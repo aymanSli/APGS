@@ -1,0 +1,496 @@
+{% extends "layout.html" %}
+
+{% set active_page = 'market_info' %}
+
+{% block title %}Informations de Marché - Gestion de Produit Structuré{% endblock %}
+
+{% block nav_icon %}fas fa-chart-bar{% endblock %}
+{% block nav_title %}Market Information{% endblock %}
+
+{% block additional_styles %}
+<style>
+    .index-card {
+        background-color: #e9f2ff;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        transition: transform 0.2s;
+    }
+    .index-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    }
+    .index-card .card-header {
+        font-weight: bold;
+        color: #0d6efd;
+        border-bottom: 1px solid rgba(0, 123, 255, 0.2);
+    }
+    .performance-positive {
+        color: #198754;
+        font-weight: bold;
+    }
+    .performance-negative {
+        color: #dc3545;
+        font-weight: bold;
+    }
+    .chart-container {
+        height: 400px;
+        margin-top: 20px;
+        margin-bottom: 30px;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    .market-summary {
+        margin-bottom: 20px;
+        padding: 15px;
+        background-color: #f0f7ff;
+        border-radius: 8px;
+    }
+    .index-selector {
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 15px;
+        background-color: #e9ecef;
+    }
+    .price-tag {
+        font-size: 1.2em;
+        font-weight: bold;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Date Selector -->
+<div class="date-selector">
+    <div class="row align-items-center">
+        <div class="col-md-4">
+            <div class="input-group">
+                <input type="date" id="selected-date" class="form-control" value="{{ date }}">
+                <button class="btn btn-primary" id="update-date-btn">
+                    <i class="fas fa-sync-alt me-1"></i> Mettre à jour
+                </button>
+            </div>
+        </div>
+        <div class="col-md-8">
+            <h5><i class="fas fa-info-circle me-2"></i> Produit Performance Monde</h5>
+            <p class="mb-0">Panier composé à part égale des 5 indices : ASX200, DAX, FTSE100, NASDAQ100, SMI</p>
+        </div>
+    </div>
+</div>
+
+<!-- Market Summary -->
+<div class="market-summary">
+    <div class="row">
+        <div class="col-md-3">
+            <h6><i class="fas fa-chart-pie me-2"></i> Performance du Panier</h6>
+            <div class="d-flex justify-content-between mt-2">
+                <span>Journalière:</span>
+                <span class="{% if basket_data.daily_perf >= 0 %}performance-positive{% else %}performance-negative{% endif %}">
+                    {{ "%.2f"|format(basket_data.daily_perf) }}%
+                </span>
+            </div>
+            <div class="d-flex justify-content-between mt-2">
+                <span>Mensuelle:</span>
+                <span class="{% if basket_data.monthly_perf >= 0 %}performance-positive{% else %}performance-negative{% endif %}">
+                    {{ "%.2f"|format(basket_data.monthly_perf) }}%
+                </span>
+            </div>
+            <div class="d-flex justify-content-between mt-2">
+                <span>Depuis T0:</span>
+                <span class="{% if basket_data.since_t0_perf >= 0 %}performance-positive{% else %}performance-negative{% endif %}">
+                    {{ "%.2f"|format(basket_data.since_t0_perf) }}%
+                </span>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <h6><i class="fas fa-trophy me-2"></i> Meilleur Indice</h6>
+            <div class="text-center mt-2">
+                <span class="badge bg-success py-2 px-3">{{ basket_data.best_index }}</span>
+                <div class="mt-2 {% if basket_data.best_index_perf >= 0 %}performance-positive{% else %}performance-negative{% endif %}">
+                    {{ "%.2f"|format(basket_data.best_index_perf) }}%
+                </div>
+                <small>depuis T0</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <h6><i class="fas fa-arrow-down me-2"></i> Pire Indice</h6>
+            <div class="text-center mt-2">
+                <span class="badge bg-danger py-2 px-3">{{ basket_data.worst_index }}</span>
+                <div class="mt-2 performance-negative">
+                    {{ "%.2f"|format(basket_data.worst_index_perf) }}%
+                </div>
+                <small>depuis T0</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <h6><i class="fas fa-percentage me-2"></i> Impact sur le Produit</h6>
+            <div class="text-center mt-2">
+                <div class="price-tag">{{ "%.2f"|format(basket_data.product_value) }} €</div>
+                <small class="{% if basket_data.product_perf >= 0 %}performance-positive{% else %}performance-negative{% endif %}">
+                    {{ "%.2f"|format(basket_data.product_perf) }}% depuis émission
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Index Selector -->
+<div class="index-selector">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="btn-group w-100" role="group" aria-label="Index selection">
+                <button type="button" class="btn btn-outline-primary active" data-index="all">Tous les Indices</button>
+                {% for index_name in market_data.keys() %}
+                <button type="button" class="btn btn-outline-primary" data-index="{{ index_name }}">{{ index_name }}</button>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Index Cards -->
+<div class="row">
+    {% for index_name, data in market_data.items() %}
+    <div class="col-md-4 index-display" data-index="{{ index_name }}">
+        <div class="card index-card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>Index name</span>
+                    <span>{{ index_name }}</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <span>Current Price</span>
+                    <span class="float-end">{{ "%.2f"|format(data.current_price) }}</span>
+                </div>
+                <div class="mb-2">
+                    <span>Daily change (in %)</span>
+                    <span class="float-end {% if data.daily_perf >= 0 %}performance-positive{% else %}performance-negative{% endif %}">
+                        {{ "%.2f"|format(data.daily_perf) }}
+                    </span>
+                </div>
+                <div class="mb-2">
+                    <span>Monthly change (in %)</span>
+                    <span class="float-end {% if data.monthly_perf >= 0 %}performance-positive{% else %}performance-negative{% endif %}">
+                        {{ "%.2f"|format(data.monthly_perf) }}
+                    </span>
+                </div>
+                <div class="mb-2">
+                    <span>Change since T0 (in %)</span>
+                    <span class="float-end {% if data.since_t0_perf >= 0 %}performance-positive{% else %}performance-negative{% endif %}">
+                        {{ "%.2f"|format(data.since_t0_perf) }}
+                    </span>
+                </div>
+                <div class="mb-2">
+                    <span>Currency</span>
+                    <span class="float-end">{{ data.currency }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-exchange-alt me-2"></i> Taux de Change</span>
+                </div>
+            </div>
+            <div class="card-body">
+                {% for fx_name, fx_rate in fx_rates.items() %}
+                <div class="mb-2">
+                    <span>{{ fx_name }}</span>
+                    <span class="float-end">{{ "%.4f"|format(fx_rate) }}</span>
+                </div>
+                {% endfor %}
+                <div class="mb-2">
+                    <span>Taux EUR</span>
+                    <span class="float-end">{{ "%.2f"|format(eur_rate) }}%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts -->
+<div class="card mt-4">
+    <div class="card-header">
+        <div class="d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-chart-line me-2"></i> Évolution des Indices (depuis T0)</span>
+            <div>
+                <button class="btn btn-sm btn-outline-secondary me-2" id="zoom-1m">1M</button>
+                <button class="btn btn-sm btn-outline-secondary me-2" id="zoom-3m">3M</button>
+                <button class="btn btn-sm btn-outline-secondary me-2" id="zoom-6m">6M</button>
+                <button class="btn btn-sm btn-outline-primary" id="zoom-all">All</button>
+            </div>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="chart-container">
+            <canvas id="indicesChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Portfolio Delta Exposure -->
+<div class="card mt-4">
+    <div class="card-header">
+        <i class="fas fa-balance-scale me-2"></i> Exposition Delta du Portefeuille
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <div style="height: 300px;">
+                    <canvas id="deltaChart"></canvas>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Indice</th>
+                            <th class="text-end">Delta</th>
+                            <th class="text-end">Valeur (€)</th>
+                            <th class="text-end">% du Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for position in portfolio.positions %}
+                        {% if position.name in market_data %}
+                        <tr>
+                            <td>{{ position.name }}</td>
+                            <td class="text-end">{{ "%.4f"|format(position.delta) }}</td>
+                            <td class="text-end">{{ "%.2f"|format(position.value) }} €</td>
+                            <td class="text-end">{{ "%.2f"|format(position.value / portfolio.total_position_value * 100) }}%</td>
+                        </tr>
+                        {% endif %}
+                        {% endfor %}
+                        <tr class="table-light">
+                            <td><strong>Total</strong></td>
+                            <td class="text-end"><strong>{{ "%.4f"|format(portfolio.positions|selectattr("name", "in", market_data.keys())|sum(attribute="delta")) }}</strong></td>
+                            <td class="text-end"><strong>{{ "%.2f"|format(portfolio.positions|selectattr("name", "in", market_data.keys())|sum(attribute="value")) }} €</strong></td>
+                            <td class="text-end"><strong>100.00%</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialiser les graphiques
+        initIndicesChart();
+        initDeltaChart();
+
+        // Gestionnaire pour le sélecteur d'indices
+        document.querySelectorAll('[data-index]').forEach(button => {
+            button.addEventListener('click', function() {
+                const selectedIndex = this.getAttribute('data-index');
+
+                // Mettre à jour les classes des boutons
+                document.querySelectorAll('[data-index]').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                this.classList.add('active');
+
+                // Filtrer les cartes d'indices
+                if (selectedIndex === 'all') {
+                    document.querySelectorAll('.index-display').forEach(card => {
+                        card.style.display = 'block';
+                    });
+                } else {
+                    document.querySelectorAll('.index-display').forEach(card => {
+                        if (card.getAttribute('data-index') === selectedIndex) {
+                            card.style.display = 'block';
+                        } else {
+                            card.style.display = 'none';
+                        }
+                    });
+                }
+            });
+        });
+
+        // Gestionnaire pour les boutons de zoom
+        document.getElementById('zoom-1m').addEventListener('click', function() {
+            updateChartTimeframe(30); // 1 mois
+        });
+
+        document.getElementById('zoom-3m').addEventListener('click', function() {
+            updateChartTimeframe(90); // 3 mois
+        });
+
+        document.getElementById('zoom-6m').addEventListener('click', function() {
+            updateChartTimeframe(180); // 6 mois
+        });
+
+        document.getElementById('zoom-all').addEventListener('click', function() {
+            updateChartTimeframe('all');
+        });
+
+        // Gestionnaire pour le bouton de mise à jour de la date
+        document.getElementById('update-date-btn').addEventListener('click', function() {
+            const selectedDate = document.getElementById('selected-date').value;
+            if (selectedDate) {
+                window.location.href = `/market_info?date=${selectedDate}`;
+            }
+        });
+    });
+
+    // Graphique des indices
+    function initIndicesChart() {
+        const ctx = document.getElementById('indicesChart').getContext('2d');
+
+        // Données réelles des indices qui seraient fournies par le serveur
+        const indicesData = {{ price_history|default('{}')|safe }};
+
+        // Si aucune donnée réelle, utiliser des données fictives pour la démo
+        const demoData = {
+            labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
+            datasets: [
+                {
+                    label: 'ASX200',
+                    data: [100, 95, 90, 85, 80, 85, 90],
+                    borderColor: '#007bff',
+                    tension: 0.1,
+                    fill: false
+                },
+                {
+                    label: 'DAX',
+                    data: [100, 98, 95, 90, 88, 85, 82],
+                    borderColor: '#28a745',
+                    tension: 0.1,
+                    fill: false
+                },
+                {
+                    label: 'FTSE100',
+                    data: [100, 97, 93, 90, 92, 89, 87],
+                    borderColor: '#dc3545',
+                    tension: 0.1,
+                    fill: false
+                },
+                {
+                    label: 'NASDAQ100',
+                    data: [100, 90, 85, 80, 75, 70, 65],
+                    borderColor: '#ffc107',
+                    tension: 0.1,
+                    fill: false
+                },
+                {
+                    label: 'SMI',
+                    data: [100, 95, 92, 90, 89, 88, 87],
+                    borderColor: '#6f42c1',
+                    tension: 0.1,
+                    fill: false
+                }
+            ]
+        };
+
+        const chartData = Object.keys(indicesData).length > 0 ? indicesData : demoData;
+
+        const indicesChart = new Chart(ctx, {
+            type: 'line',
+            data: chartData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Performance normalisée des indices (base 100)'
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        title: {
+                            display: true,
+                            text: 'Performance (%)'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Stocker le graphique dans une variable globale pour pouvoir y accéder plus tard
+        window.indicesChart = indicesChart;
+    }
+
+    // Graphique des deltas
+    function initDeltaChart() {
+            const ctx = document.getElementById('deltaChart').getContext('2d');
+
+            // Filtrer uniquement les positions correspondant aux indices
+            const indicesNames = Array.from(document.querySelectorAll('.index-display')).map(el => el.getAttribute('data-index'));
+
+            // Vérifier si les données du portfolio existent
+            const portfolioPositions = {{ portfolio.positions|default([])|tojson|safe }};
+
+            const portfolioData = {
+                labels: indicesNames,
+                datasets: [{
+                    label: 'Exposition Delta',
+                    data: indicesNames.map(name => {
+                        const position = portfolioPositions.find(p => p && p.name === name);
+                        return position ? position.delta : 0;
+                    }),
+                    backgroundColor: [
+                        'rgba(0, 123, 255, 0.7)',
+                        'rgba(40, 167, 69, 0.7)',
+                        'rgba(220, 53, 69, 0.7)',
+                        'rgba(255, 193, 7, 0.7)',
+                        'rgba(111, 66, 193, 0.7)'
+                    ],
+                    borderColor: [
+                        'rgba(0, 123, 255, 1)',
+                        'rgba(40, 167, 69, 1)',
+                        'rgba(220, 53, 69, 1)',
+                        'rgba(255, 193, 7, 1)',
+                        'rgba(111, 66, 193, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            };
+
+            const deltaChart = new Chart(ctx, {
+                type: 'pie',
+                data: portfolioData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw || 0;
+                                    return `${label}: ${value.toFixed(4)}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            window.deltaChart = deltaChart;
+        }
+
+    // Fonction pour mettre à jour la période du graphique
+    function updateChartTimeframe(days) {
+        // Cette fonction filtrerait les données en fonction de la période sélectionnée
+        // Pour une démo, nous pouvons simplement afficher une alerte
+        alert(`Période sélectionnée : ${days === 'all' ? 'Tout' : days + ' jours'}`);
+    }
+</script>
+{% endblock %}

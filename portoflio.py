@@ -34,10 +34,11 @@ class DeltaHedgingPortfolio:
         # Get the list of domestic and foreign indices
         self.domestic_indices = market_data.domestic_indices
         self.foreign_indices = market_data.foreign_indices
+
         # Column names for reference
         self.column_names = (
             self.domestic_indices + 
-            [f"{idx}_FX_adjusted" for idx in self.foreign_indices] + 
+            [f"{idx}_FX_adjusted" for idx in self.foreign_indices] +
             [f"{market_data.index_currencies[idx]}_FX_adjusted" for idx in self.foreign_indices]
         )
 

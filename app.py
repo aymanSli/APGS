@@ -356,22 +356,23 @@ def get_portfolio_data():
 
         # Indice du produit
         index_name = simulation.portfolio.column_names[i]
-
+        print(index_name)
         # Pour les devises, on a un prix en devise étrangère et en euro
-        if index_name in ["RUSD", "RGBP", "RJPY", "RHKD"]:
-            if index_name == "RUSD":
+        if index_name in ["ASX200", "NASDAQ100", "SMI", "FTSE100"]:
+            if index_name == "NASDAQ100":
                 foreign_currency = "$"
-            elif index_name == "RGBP":
+            elif index_name == "FTSE100":
                 foreign_currency = "£"
-            elif index_name == "RJPY":
-                foreign_currency = "¥"
-            elif index_name == "RHKD":
-                foreign_currency = "HK$"
+            elif index_name == "SMI":
+                foreign_currency = "CHF"
+            elif index_name == "ASX200":
+                foreign_currency = "A$"
 
         positions.append({
             'name': index_name,
             'delta': simulation.portfolio.deltas[i],
             'price': price,
+            'price_foreign':price ,
             'value': position_value,
             'currency': currency,
             'foreign_currency': foreign_currency
@@ -462,5 +463,203 @@ def calculate_pnl():
     return ((current_value / initial_value) - 1) * 100  # P&L en pourcentage
 
 
+@app.route('/market_info')
+def market_info():
+    """Page d'informations de marché."""
+    if simulation is None:
+        return redirect(url_for('initialize'))
+
+    # Obtenir les données de marché pour les indices du panier
+    market_data = {}
+
+    # Date actuelle et index correspondant
+    current_date = simulation.current_date
+    date_index = simulation.market_data.get_date_index(current_date)
+
+    # Date T0 et index correspondant
+    t0_date = simulation.date_handler.key_dates['T0']
+    t0_index = simulation.market_data.get_date_index(t0_date)
+
+    # Date d'hier (pour calcul de performance journalière)
+    yesterday_index = max(date_index - 1, 0)
+
+    # Date d'il y a un mois (pour calcul de performance mensuelle)
+    month_ago_index = max(date_index - 21, 0)  # Approximativement 21 jours de trading par mois
+
+    # Récupérer les infos pour chaque indice
+    indices = simulation.market_data.indices
+
+    for index_name in indices:
+        # Prix actuel
+        current_price = simulation.market_data.get_asset_price(index_name, date_index)
+
+        # Prix hier
+        yesterday_price = simulation.market_data.get_asset_price(index_name, yesterday_index)
+
+        # Prix il y a un mois
+        month_ago_price = simulation.market_data.get_asset_price(index_name, month_ago_index)
+
+        # Prix à T0
+        t0_price = simulation.market_data.get_asset_price(index_name, t0_index)
+
+        # Devise de l'indice
+        currency = simulation.market_data.index_currencies[index_name]
+
+        # Calculer les performances
+        daily_perf = (current_price / yesterday_price) - 1
+        monthly_perf = (current_price / month_ago_price) - 1
+        since_t0_perf = (current_price / t0_price) - 1
+
+        # Stocker les informations
+        market_data[index_name] = {
+            'current_price': current_price,
+            'daily_perf': daily_perf * 100,  # En pourcentage
+            'monthly_perf': monthly_perf * 100,
+            'since_t0_perf': since_t0_perf * 100,
+            'currency': currency
+        }
+
+    # Calculer la performance moyenne du panier
+    basket_daily_perf = sum(data['daily_perf'] for data in market_data.values()) / len(indices)
+    basket_monthly_perf = sum(data['monthly_perf'] for data in market_data.values()) / len(indices)
+    basket_since_t0_perf = sum(data['since_t0_perf'] for data in market_data.values()) / len(indices)
+
+    # Trouver le meilleur et le pire indice (depuis T0)
+    best_index = max(indices, key=lambda idx: market_data[idx]['since_t0_perf'])
+    worst_index = min(indices, key=lambda idx: market_data[idx]['since_t0_perf'])
+
+    # Récupérer les taux de change
+    fx_rates = {}
+    for currency in set(simulation.market_data.index_currencies.values()):
+        if currency != 'EUR':  # EUR/EUR = 1
+            fx_rates[f'EUR/{currency}'] = simulation.market_data.get_exchange_rate(currency, date_index)
+
+    # Taux d'intérêt EUR
+    eur_rate = simulation.market_data.get_interest_rate('EUR', date_index) * 100  # En pourcentage
+
+    # Récupérer les deltas et valeurs actuelles du portefeuille
+    spot_prices = simulation.past_data.get_spot_prices()
+    portfolio_state = simulation.portfolio.get_portfolio_state(spot_prices)
+
+    # Calcul de l'impact sur la valeur du produit
+    product_value = portfolio_state['total_value']
+    product_perf = ((product_value / 1000.0) - 1) * 100  # Assumant une valeur initiale de 1000€
+
+    basket_data = {
+        'daily_perf': basket_daily_perf,
+        'monthly_perf': basket_monthly_perf,
+        'since_t0_perf': basket_since_t0_perf,
+        'best_index': best_index,
+        'best_index_perf': market_data[best_index]['since_t0_perf'],
+        'worst_index': worst_index,
+        'worst_index_perf': market_data[worst_index]['since_t0_perf'],
+        'product_value': product_value,
+        'product_perf': product_perf
+    }
+
+    # Création d'un historique des prix pour le graphique
+    # (Idéalement, ceci serait basé sur des données historiques réelles)
+    price_history = {}
+
+    # Rassembler les données pour le template
+    return render_template(
+        'marketdata_info.html',
+        date=current_date.strftime('%Y-%m-%d'),
+        market_data=market_data,
+        basket_data=basket_data,
+        fx_rates=fx_rates,
+        eur_rate=eur_rate,
+        portfolio=portfolio_state
+    )
+
+
+def get_market_data():
+    """Obtenir les données de marché pour les indices du panier."""
+    # Données de marché pour les indices
+    market_data = {}
+
+    # Date actuelle et index correspondant
+    current_date = simulation.current_date
+    date_index = simulation.market_data.get_date_index(current_date)
+
+    # Date T0 et index correspondant
+    t0_date = simulation.date_handler.key_dates['T0']
+    t0_index = simulation.market_data.get_date_index(t0_date)
+
+    # Date d'hier (pour calcul de performance journalière)
+    yesterday_index = max(date_index - 1, 0)
+
+    # Date d'il y a un mois (pour calcul de performance mensuelle)
+    month_ago_index = max(date_index - 21, 0)  # Approximativement 21 jours de trading par mois
+
+    # Récupérer les infos pour chaque indice
+    indices = simulation.market_data.indices
+
+    for index_name in indices:
+        # Prix actuel
+        current_price = simulation.market_data.get_asset_price(index_name, date_index)
+
+        # Prix hier
+        yesterday_price = simulation.market_data.get_asset_price(index_name, yesterday_index)
+
+        # Prix il y a un mois
+        month_ago_price = simulation.market_data.get_asset_price(index_name, month_ago_index)
+
+        # Prix à T0
+        t0_price = simulation.market_data.get_asset_price(index_name, t0_index)
+
+        # Devise de l'indice
+        currency = simulation.market_data.index_currencies[index_name]
+
+        # Calculer les performances
+        daily_perf = (current_price / yesterday_price) - 1
+        monthly_perf = (current_price / month_ago_price) - 1
+        since_t0_perf = (current_price / t0_price) - 1
+
+        # Stocker les informations
+        market_data[index_name] = {
+            'current_price': current_price,
+            'daily_perf': daily_perf * 100,  # En pourcentage
+            'monthly_perf': monthly_perf * 100,
+            'since_t0_perf': since_t0_perf * 100,
+            'currency': currency
+        }
+
+    # Calculer la performance moyenne du panier
+    basket_daily_perf = sum(data['daily_perf'] for data in market_data.values()) / len(indices)
+    basket_monthly_perf = sum(data['monthly_perf'] for data in market_data.values()) / len(indices)
+    basket_since_t0_perf = sum(data['since_t0_perf'] for data in market_data.values()) / len(indices)
+
+    # Trouver le meilleur et le pire indice (depuis T0)
+    best_index = max(indices, key=lambda idx: market_data[idx]['since_t0_perf'])
+    worst_index = min(indices, key=lambda idx: market_data[idx]['since_t0_perf'])
+
+    # Récupérer les taux de change
+    fx_rates = {}
+    for currency in set(simulation.market_data.index_currencies.values()):
+        if currency != 'EUR':  # EUR/EUR = 1
+            fx_rates[f'EUR/{currency}'] = simulation.market_data.get_exchange_rate(currency, date_index)
+
+    # Taux d'intérêt EUR
+    eur_rate = simulation.market_data.get_interest_rate('EUR', date_index) * 100  # En pourcentage
+
+    # Calculer l'impact sur la valeur du produit (utiliser le portefeuille existant)
+    portfolio_data = get_portfolio_data()  # Réutiliser cette fonction
+    product_value = portfolio_data['total_value']
+    product_perf = ((product_value / 1000.0) - 1) * 100  # Assumant une valeur initiale de 1000€
+
+    basket_data = {
+        'daily_perf': basket_daily_perf,
+        'monthly_perf': basket_monthly_perf,
+        'since_t0_perf': basket_since_t0_perf,
+        'best_index': best_index,
+        'best_index_perf': market_data[best_index]['since_t0_perf'],
+        'worst_index': worst_index,
+        'worst_index_perf': market_data[worst_index]['since_t0_perf'],
+        'product_value': product_value,
+        'product_perf': product_perf
+    }
+
+    return market_data, basket_data, fx_rates, eur_rate
 if __name__ == '__main__':
     app.run(debug=True, port=8080)
