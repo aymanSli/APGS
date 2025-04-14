@@ -1,0 +1,153 @@
+ /* style.css - Styles pour l'application de gestion de produit structuré */
+
+/* Styles généraux */
+body {
+    background-color: #f8f9fa;
+}
+
+/* Sidebar */
+.sidebar {
+    min-height: 100vh;
+    background-color: #f8f9fa;
+    border-right: 1px solid #dee2e6;
+}
+
+.sidebar-link {
+    padding: 10px 15px;
+    display: block;
+    text-decoration: none;
+    color: #495057;
+    border-left: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.sidebar-link:hover {
+    background-color: #e9ecef;
+    border-left: 3px solid #0d6efd;
+}
+
+.sidebar-link.active {
+    background-color: #e9ecef;
+    border-left: 3px solid #0d6efd;
+    font-weight: bold;
+}
+
+/* Zone de contenu */
+.content-area {
+    padding: 20px;
+}
+
+/* Cartes */
+.card {
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.card-header {
+    font-weight: bold;
+    background-color: #f8f9fa;
+    padding: 12px 15px;
+}
+
+/* Couleurs pour P&L */
+.bg-profit {
+    background-color: rgba(40, 167, 69, 0.2);
+    color: #155724;
+}
+
+.bg-loss {
+    background-color: rgba(220, 53, 69, 0.2);
+    color: #721c24;
+}
+
+/* Mise en évidence des lignes */
+.highlight-row {
+    background-color: rgba(0, 123, 255, 0.1);
+}
+
+/* Navigation des dates */
+.date-navigation {
+    background-color: #e9f2ff;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Tableaux */
+.table th, .table td {
+    vertical-align: middle;
+}
+
+.table thead th {
+    font-weight: bold;
+    background-color: #f5f5f5;
+}
+
+/* Badges */
+.badge {
+    padding: 6px 10px;
+    border-radius: 50px;
+    font-weight: 500;
+}
+
+/* Boutons */
+.btn {
+    border-radius: 6px;
+    font-weight: 500;
+    padding: 8px 16px;
+    transition: all 0.2s ease;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+/* Modal */
+.modal-content {
+    border-radius: 8px;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+}
+
+/* Responsive */
+@media (max-width: 992px) {
+    .sidebar {
+        min-height: auto;
+    }
+
+    .content-area {
+        padding: 15px;
+    }
+}
+
+@media (max-width: 768px) {
+    .date-navigation {
+        padding: 10px;
+    }
+
+    .card {
+        margin-bottom: 15px;
+    }
+}
+
+/* Animations */
+.fade-in {
+    animation: fadeIn 0.5s;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}

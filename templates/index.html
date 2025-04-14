@@ -1,10 +1,879 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>$Title$</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion de Produit Structuré</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome pour les icônes -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Chart.js pour les graphiques -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- CSS personnalisé -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-$END$
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-2 sidebar p-0">
+                <div class="p-3 bg-primary text-white">
+                    <h5><i class="fas fa-chart-line me-2"></i> Portfolio</h5>
+                    <small>Gestion de Produit Structuré</small>
+                </div>
+                <div class="mt-3">
+                    <a href="#" class="sidebar-link active">
+                        <i class="fas fa-home me-2"></i> Portfolio
+                    </a>
+                    <a href="#" class="sidebar-link">
+                        <i class="fas fa-chart-bar me-2"></i> Market Information
+                    </a>
+                    <a href="#" class="sidebar-link">
+                        <i class="fas fa-user me-2"></i> Client
+                    </a>
+                    <a href="#" class="sidebar-link">
+                        <i class="fas fa-info-circle me-2"></i> Info
+                    </a>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-10 content-area">
+                <!-- Top Navigation Bar -->
+                <nav class="navbar navbar-light bg-primary text-white mb-4">
+                    <div class="container-fluid">
+                        <span class="navbar-brand mb-0 h1 text-white">
+                            <i class="fas fa-wallet me-2"></i> Portfolio Management
+                        </span>
+                    </div>
+                </nav>
+
+                <!-- Date Navigation -->
+                <div class="date-navigation">
+                    <div class="row align-items-center">
+                        <div class="col-md-3">
+                            <h5><i class="far fa-calendar-alt me-2"></i> Date: <span id="current-date">{{ date }}</span></h5>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="input-group">
+                                <input type="number" id="days-input" class="form-control" value="1" min="1">
+                                <button class="btn btn-outline-primary" id="advance-btn">
+                                    <i class="fas fa-forward me-1"></i> Avancer
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <button class="btn btn-outline-primary" id="key-date-btn">
+                                <i class="fas fa-calendar-check me-1"></i> Date clé suivante
+                            </button>
+                        </div>
+                        <div class="col-md-2">
+                            <input type="date" id="date-picker" class="form-control">
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-md-12">
+                            <div id="next-key-date-info">
+                                {% if product.next_key_date.exists %}
+                                <small class="text-muted">
+                                    Prochaine date clé: <strong>{{ product.next_key_date.key }}</strong>
+                                    ({{ product.next_key_date.date }}) -
+                                    <span class="badge bg-info">{{ product.next_key_date.days_remaining }} jours restants</span>
+                                </small>
+                                {% else %}
+                                <small class="text-muted">{{ product.next_key_date.message }}</small>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Portfolio Information -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-briefcase me-2"></i> Portfolio Information
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Product Name</th>
+                                                <th class="text-end">Quantity</th>
+                                                <th class="text-end">Price (€)</th>
+                                                <th class="text-end">Price in Foreign Currency</th>
+                                                <th class="text-end">Total Value (€)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="positions-table">
+                                            {% for position in portfolio.positions %}
+                                            <tr>
+                                                <td>{{ position.name }}</td>
+                                                <td class="text-end">{{ "%.6f"|format(position.delta) }}</td>
+                                                <td class="text-end">{{ "%.6f"|format(position.price) }} €</td>
+                                                <td class="text-end">
+                                                    {% if position.foreign_currency %}
+                                                    {{ "%.6f"|format(position.price) }} {{ position.foreign_currency }}
+                                                    {% else %}
+                                                    -
+                                                    {% endif %}
+                                                </td>
+                                                <td class="text-end">{{ "%.2f"|format(position.value) }} €</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                        <tfoot class="table-light">
+                                            <tr>
+                                                <th colspan="4" class="text-end">Cash:</th>
+                                                <th class="text-end">{{ "%.2f"|format(portfolio.cash) }} €</th>
+                                            </tr>
+                                            <tr>
+                                                <th colspan="4" class="text-end">Interest Rate:</th>
+                                                <th class="text-end">{{ "%.2f"|format(portfolio.interest_rate) }} %</th>
+                                            </tr>
+                                            <tr>
+                                                <th colspan="4" class="text-end">Total Value:</th>
+                                                <th class="text-end">{{ "%.2f"|format(portfolio.total_value) }} €</th>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mt-3">
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card h-100">
+                                        <div class="card-header d-flex justify-content-between align-items-center">
+                                            <span><i class="fas fa-chart-line me-2"></i> P&L</span>
+                                            <span class="badge {% if portfolio.pnl >= 0 %}bg-success{% else %}bg-danger{% endif %}">
+                                                {{ "%.2f"|format(portfolio.pnl) }}%
+                                            </span>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="text-center {% if portfolio.pnl >= 0 %}bg-profit{% else %}bg-loss{% endif %} p-4 rounded">
+                                                <h2>{{ "%.2f"|format(portfolio.pnl) }}%</h2>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card h-100">
+                                    <div class="card-header">
+                                        <i class="fas fa-money-bill-wave me-2"></i> Value of Portfolio
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="text-center bg-light p-4 rounded">
+                                            <h2>{{ "%.2f"|format(portfolio.total_value) }} €</h2>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Rebalancing Info -->
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="d-flex justify-content-between mb-3">
+                            <button class="btn btn-danger" id="rebalancing-info-btn">
+                                <i class="fas fa-sync-alt me-2"></i> REBALANCING INFORMATION
+                            </button>
+                            <button class="btn btn-primary" id="rebalance-btn">
+                                <i class="fas fa-sync me-2"></i> REBALANCE
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Flows Chart -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-chart-area me-2"></i> Flows until now (in €)
+                    </div>
+                    <div class="card-body">
+                        <canvas id="flows-chart" height="200"></canvas>
+                    </div>
+                </div>
+
+                <!-- Dividend History -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-money-bill-alt me-2"></i> Dividend History
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="dividends-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Key</th>
+                                        <th>Amount (€)</th>
+                                        <th>Index</th>
+                                        <th>Return (%)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if dividends %}
+                                        {% for dividend in dividends %}
+                                        <tr>
+                                            <td>{{ dividend.date }}</td>
+                                            <td>{{ dividend.key }}</td>
+                                            <td>{{ "%.2f"|format(dividend.amount) }} €</td>
+                                            <td>{{ dividend.index }}</td>
+                                            <td>{{ "%.2f"|format(dividend.return) }}%</td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="5" class="text-center">Aucun dividende versé</td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Product Status -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-info-circle me-2"></i> Product Status
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <h6>Excluded Indices:</h6>
+                                    <p id="excluded-indices">
+                                        {% if product.excluded_indices %}
+                                            {{ product.excluded_indices|join(', ') }}
+                                        {% else %}
+                                            Aucun
+                                        {% endif %}
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <h6>Minimum Guarantee Triggered:</h6>
+                                    <p id="guarantee-status">
+                                        {% if product.guarantee_triggered %}
+                                            <span class="badge bg-success">Oui</span>
+                                        {% else %}
+                                            <span class="badge bg-warning">Non</span>
+                                        {% endif %}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <button class="btn btn-outline-info" id="product-details-btn">
+                                    <i class="fas fa-file-alt me-2"></i> View Detailed Product Information
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal pour les détails du produit -->
+    <div class="modal fade" id="product-details-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-file-alt me-2"></i> Detailed Product Information</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Le contenu sera injecté dynamiquement via JavaScript -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- JavaScript intégré -->
+    <script>
+        // Variables globales
+        let flowsChart = null;
+        const flowsData = {{ flows|tojson|safe }};
+
+        // Initialisation après chargement du DOM
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialiser le graphique de flux
+            initFlowsChart();
+
+            // Gestionnaire pour le bouton d'avancement
+            document.getElementById('advance-btn').addEventListener('click', function() {
+                const days = document.getElementById('days-input').value;
+                if (days <= 0) {
+                    alert("Le nombre de jours doit être positif.");
+                    return;
+                }
+
+                advanceDays(days);
+            });
+
+            // Gestionnaire pour le bouton de saut à la date clé suivante
+            document.getElementById('key-date-btn').addEventListener('click', function() {
+                jumpToKeyDate();
+            });
+
+            // Gestionnaire pour le bouton de rebalancement
+            document.getElementById('rebalance-btn').addEventListener('click', function() {
+                rebalancePortfolio();
+            });
+
+            // Gestionnaire pour le bouton d'informations sur le rebalancement
+            document.getElementById('rebalancing-info-btn').addEventListener('click', function() {
+                showRebalancingInfo();
+            });
+
+            // Gestionnaire pour le bouton de détails du produit
+            document.getElementById('product-details-btn').addEventListener('click', function() {
+                showProductDetails();
+            });
+
+            // Gestionnaire pour le sélecteur de date
+            document.getElementById('date-picker').addEventListener('change', function() {
+                const selectedDate = this.value;
+                if (selectedDate) {
+                    setSimulationDate(selectedDate);
+                }
+            });
+
+            // Initialiser le sélecteur de date avec la date actuelle
+            const currentDate = document.getElementById('current-date').innerText;
+            document.getElementById('date-picker').value = currentDate;
+        });
+
+        // Initialisation du graphique de flux
+        function initFlowsChart() {
+            const ctx = document.getElementById('flows-chart').getContext('2d');
+
+            const labels = flowsData.map(item => item.date);
+            const values = flowsData.map(item => item.value);
+
+            flowsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Valeur du portefeuille (€)',
+                        data: values,
+                        borderColor: 'rgba(13, 110, 253, 1)',
+                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.1,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return `Valeur: ${context.parsed.y.toFixed(2)} €`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'Valeur (€)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Mise à jour du graphique de flux
+        function updateFlowsChart(newFlowsData) {
+            const labels = newFlowsData.map(item => item.date);
+            const values = newFlowsData.map(item => item.value);
+
+            flowsChart.data.labels = labels;
+            flowsChart.data.datasets[0].data = values;
+            flowsChart.update();
+        }
+
+        // Fonctions pour les actions de l'interface
+        function advanceDays(days) {
+            // Désactiver les boutons pendant le traitement
+            setLoading(true);
+
+            // Envoyer la requête AJAX
+            fetch('/advance', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `days=${days}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    updateInterface(data);
+                } else {
+                    alert(`Erreur: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert('Une erreur est survenue lors de l\'avancement de la simulation.');
+            })
+            .finally(() => {
+                setLoading(false);
+            });
+        }
+
+        function jumpToKeyDate() {
+            // Désactiver les boutons pendant le traitement
+            setLoading(true);
+
+            // Envoyer la requête AJAX
+            fetch('/jump_key_date', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    updateInterface(data);
+                } else {
+                    alert(`Erreur: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert('Une erreur est survenue lors du saut à la date clé suivante.');
+            })
+            .finally(() => {
+                setLoading(false);
+            });
+        }
+
+        function rebalancePortfolio() {
+            // Désactiver les boutons pendant le traitement
+            setLoading(true);
+
+            // Envoyer la requête AJAX
+            fetch('/rebalance', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Mettre à jour les parties du portefeuille
+                    updatePortfolioInfo(data.portfolio);
+                    updateProductInfo(data.product);
+
+                    // Afficher les détails du rebalancement dans une boîte de dialogue
+                    let detailsHTML = '<h5>Détails du rebalancement</h5>';
+                    detailsHTML += '<table class="table table-striped">';
+                    detailsHTML += '<thead><tr><th>Produit</th><th>Ancien Delta</th><th>Nouveau Delta</th><th>Changement</th></tr></thead>';
+                    detailsHTML += '<tbody>';
+
+                    // Si les données de rebalancement sont disponibles
+                    if (data.rebalance_details && data.rebalance_details.trades) {
+                        data.rebalance_details.trades.forEach(trade => {
+                            detailsHTML += `<tr>
+                                <td>${trade.asset}</td>
+                                <td>${trade.old_delta.toFixed(6)}</td>
+                                <td>${trade.new_delta.toFixed(6)}</td>
+                                <td>${trade.delta_change.toFixed(6)}</td>
+                            </tr>`;
+                        });
+                    }
+
+                    detailsHTML += '</tbody></table>';
+
+                    // Créer une boîte de dialogue modale pour afficher les détails
+                    const modalDiv = document.createElement('div');
+                    modalDiv.className = 'modal fade';
+                    modalDiv.id = 'rebalanceModal';
+                    modalDiv.setAttribute('tabindex', '-1');
+                    modalDiv.innerHTML = `
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Détails du rebalancement</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    ${detailsHTML}
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    document.body.appendChild(modalDiv);
+                    const modal = new bootstrap.Modal(document.getElementById('rebalanceModal'));
+                    modal.show();
+
+                    document.getElementById('rebalanceModal').addEventListener('hidden.bs.modal', function () {
+                        document.body.removeChild(modalDiv);
+                    });
+
+                } else {
+                    alert(`Erreur: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert('Une erreur est survenue lors du rebalancement du portefeuille.');
+            })
+            .finally(() => {
+                setLoading(false);
+            });
+        }
+        function showRebalancingInfo() {
+            // Désactiver les boutons pendant le traitement
+            setLoading(true);
+
+            // Envoyer une requête AJAX pour obtenir les informations actuelles
+            fetch('/get_rebalancing_info', {
+                method: 'GET'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Créer une représentation visuelle des deltas actuels
+                    let detailsHTML = '<h5>Informations de Rebalancement</h5>';
+                    detailsHTML += '<p>Ces informations montrent l\'état actuel des deltas et les actions recommandées.</p>';
+
+                    detailsHTML += '<table class="table table-striped">';
+                    detailsHTML += '<thead><tr><th>Produit</th><th>Delta Actuel</th><th>Prix Actuel</th><th>Valeur</th><th>Action Recommandée</th></tr></thead>';
+                    detailsHTML += '<tbody>';
+
+                    data.positions.forEach(position => {
+                        // Déterminer l'action recommandée (exemple simplifié)
+                        let action = "Maintenir";
+                        if (Math.abs(position.sensitivity) > 0.05) {
+                            action = position.sensitivity > 0 ? "Acheter" : "Vendre";
+                        }
+
+                        detailsHTML += `<tr>
+                            <td>${position.name}</td>
+                            <td>${position.delta.toFixed(6)}</td>
+                            <td>${position.price.toFixed(2)} €</td>
+                            <td>${position.value.toFixed(2)} €</td>
+                            <td>${action}</td>
+                        </tr>`;
+                    });
+
+                    detailsHTML += '</tbody></table>';
+
+                    if (data.risk_measures) {
+                        detailsHTML += '<h5 class="mt-4">Mesures de Risque</h5>';
+                        detailsHTML += '<div class="row">';
+                        detailsHTML += `<div class="col-md-4">
+                            <div class="card">
+                                <div class="card-body text-center">
+                                    <h6>Delta Total</h6>
+                                    <h3>${data.risk_measures.total_delta.toFixed(4)}</h3>
+                                </div>
+                            </div>
+                        </div>`;
+                        detailsHTML += `<div class="col-md-4">
+                            <div class="card">
+                                <div class="card-body text-center">
+                                    <h6>Gamma</h6>
+                                    <h3>${data.risk_measures.gamma.toFixed(4)}</h3>
+                                </div>
+                            </div>
+                        </div>`;
+                        detailsHTML += `<div class="col-md-4">
+                            <div class="card">
+                                <div class="card-body text-center">
+                                    <h6>Vega</h6>
+                                    <h3>${data.risk_measures.vega.toFixed(4)}</h3>
+                                </div>
+                            </div>
+                        </div>`;
+                        detailsHTML += '</div>';
+                    }
+
+                    // Créer une boîte de dialogue modale pour afficher les détails
+                    const modalDiv = document.createElement('div');
+                    modalDiv.className = 'modal fade';
+                    modalDiv.id = 'rebalanceInfoModal';
+                    modalDiv.setAttribute('tabindex', '-1');
+                    modalDiv.innerHTML = `
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Informations de Rebalancement</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    ${detailsHTML}
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-primary" id="apply-rebalance">Appliquer le Rebalancement</button>
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    document.body.appendChild(modalDiv);
+                    const modal = new bootstrap.Modal(document.getElementById('rebalanceInfoModal'));
+                    modal.show();
+
+                    // Gestionnaire pour le bouton "Appliquer le Rebalancement"
+                    document.getElementById('apply-rebalance').addEventListener('click', function() {
+                        modal.hide();
+                        rebalancePortfolio();
+                    });
+
+                    document.getElementById('rebalanceInfoModal').addEventListener('hidden.bs.modal', function () {
+                        document.body.removeChild(modalDiv);
+                    });
+
+                } else {
+                    alert(`Erreur: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert('Une erreur est survenue lors de la récupération des informations de rebalancement.');
+            })
+            .finally(() => {
+                setLoading(false);
+            });
+        }
+
+        function showProductDetails() {
+            // Envoyer la requête AJAX
+            fetch('/product_details')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Créer une représentation visuelle du cycle de vie du produit
+                    const lifecycle = data.lifecycle;
+                    let htmlContent = '<div class="table-responsive"><table class="table table-striped">';
+                    htmlContent += '<thead><tr><th>Date</th><th>Événement</th><th>Détails</th></tr></thead><tbody>';
+
+                    lifecycle.forEach(event => {
+                        htmlContent += `<tr>
+                            <td>${event.date || '-'}</td>
+                            <td>${event.type || event.name || '-'}</td>
+                            <td>${event.description || '-'}</td>
+                        </tr>`;
+                    });
+
+                    htmlContent += '</tbody></table></div>';
+
+                    // Créer une boîte de dialogue modale
+                    const modal = new bootstrap.Modal(document.getElementById('product-details-modal'));
+                    document.querySelector('#product-details-modal .modal-body').innerHTML = htmlContent;
+                    modal.show();
+                } else {
+                    alert(`Erreur: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert('Une erreur est survenue lors de la récupération des détails du produit.');
+            });
+        }
+
+        function setSimulationDate(dateStr) {
+            // Désactiver les boutons pendant le traitement
+            setLoading(true);
+
+            // Envoyer la requête AJAX
+            fetch('/set_date', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `date=${dateStr}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    updateInterface(data);
+                } else {
+                    alert(`Erreur: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert('Une erreur est survenue lors du changement de date.');
+            })
+            .finally(() => {
+                setLoading(false);
+            });
+        }
+
+        // Fonction pour désactiver/activer les boutons pendant le chargement
+        function setLoading(isLoading) {
+            const buttons = document.querySelectorAll('button');
+            buttons.forEach(button => {
+                button.disabled = isLoading;
+            });
+
+            const inputs = document.querySelectorAll('input');
+            inputs.forEach(input => {
+                input.disabled = isLoading;
+            });
+        }
+
+        // Fonctions pour mettre à jour l'interface
+        // Fonction modifiée pour vérifier si on est à la date finale
+        function updateInterface(data) {
+            // Mettre à jour la date
+            document.getElementById('current-date').innerText = data.date;
+            document.getElementById('date-picker').value = data.date;
+
+            // Mettre à jour les informations du portefeuille
+            updatePortfolioInfo(data.portfolio);
+
+            // Mettre à jour les informations du produit
+            updateProductInfo(data.product);
+
+            // Mettre à jour le tableau des dividendes
+            updateDividendsTable(data.dividends);
+
+            // Mettre à jour le graphique des flux
+            updateFlowsChart(data.flows);
+
+            // Vérifier si nous sommes à la date finale (Tc)
+            if (data.product.next_key_date && !data.product.next_key_date.exists) {
+                // Désactiver les boutons d'avancement et de saut
+                document.getElementById('advance-btn').disabled = true;
+                document.getElementById('key-date-btn').disabled = true;
+                document.getElementById('date-picker').disabled = true;
+                alert("La simulation a atteint la date finale. Vous ne pouvez plus avancer dans le temps.");
+            }
+}
+
+        function updatePortfolioInfo(portfolio) {
+            // Mettre à jour le tableau des positions
+            const positionsTable = document.getElementById('positions-table');
+            positionsTable.innerHTML = '';
+
+            portfolio.positions.forEach(position => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${position.name}</td>
+                    <td class="text-end">${position.delta.toFixed(6)}</td>
+                    <td class="text-end">${position.price.toFixed(6)} €</td>
+                    <td class="text-end">
+                        ${position.foreign_currency ? `${position.price.toFixed(6)} ${position.foreign_currency}` : '-'}
+                    </td>
+                    <td class="text-end">${position.value.toFixed(2)} €</td>
+                `;
+                positionsTable.appendChild(row);
+            });
+
+            // Mettre à jour les valeurs du portefeuille dans le tableau footer
+            const tfoot = document.querySelector('tfoot');
+            tfoot.rows[0].cells[1].textContent = `${portfolio.cash.toFixed(2)} €`;
+            tfoot.rows[1].cells[1].textContent = `${portfolio.interest_rate.toFixed(2)} %`;
+            tfoot.rows[2].cells[1].textContent = `${portfolio.total_value.toFixed(2)} €`;
+
+            // Mettre à jour le P&L
+            const pnlElement = document.querySelector('.card-header .badge');
+            pnlElement.className = `badge ${portfolio.pnl >= 0 ? 'bg-success' : 'bg-danger'}`;
+            pnlElement.innerText = `${portfolio.pnl.toFixed(2)}%`;
+
+            const pnlValueElement = document.querySelector('.card-body h2');
+            pnlValueElement.innerText = `${portfolio.pnl.toFixed(2)}%`;
+            pnlValueElement.parentElement.className = `text-center ${portfolio.pnl >= 0 ? 'bg-profit' : 'bg-loss'} p-4 rounded`;
+
+            // Mettre à jour la valeur totale du portefeuille
+            const portfolioValueElement = document.querySelectorAll('.card-body h2')[1];
+            portfolioValueElement.innerText = `${portfolio.total_value.toFixed(2)} €`;
+        }
+
+        function updateProductInfo(product) {
+            // Mettre à jour les indices exclus
+            const excludedIndicesElement = document.getElementById('excluded-indices');
+            excludedIndicesElement.innerText = product.excluded_indices.length > 0
+                ? product.excluded_indices.join(', ')
+                : 'Aucun';
+
+            // Mettre à jour le statut de la garantie
+            const guaranteeStatusElement = document.getElementById('guarantee-status');
+            guaranteeStatusElement.innerHTML = product.guarantee_triggered
+                ? '<span class="badge bg-success">Oui</span>'
+                : '<span class="badge bg-warning">Non</span>';
+
+            // Mettre à jour les informations sur la prochaine date clé
+            const nextKeyDateInfoElement = document.getElementById('next-key-date-info');
+            if (product.next_key_date.exists) {
+                nextKeyDateInfoElement.innerHTML = `
+                    <small class="text-muted">
+                        Prochaine date clé: <strong>${product.next_key_date.key}</strong>
+                        (${product.next_key_date.date}) -
+                        <span class="badge bg-info">${product.next_key_date.days_remaining} jours restants</span>
+                    </small>
+                `;
+            } else {
+                nextKeyDateInfoElement.innerHTML = `
+                    <small class="text-muted">${product.next_key_date.message}</small>
+                `;
+            }
+        }
+
+        function updateDividendsTable(dividends) {
+            const dividendsTable = document.getElementById('dividends-table').querySelector('tbody');
+            dividendsTable.innerHTML = '';
+
+            if (dividends && dividends.length > 0) {
+                dividends.forEach(dividend => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${dividend.date}</td>
+                        <td>${dividend.key}</td>
+                        <td>${dividend.amount.toFixed(2)} €</td>
+                        <td>${dividend.index}</td>
+                        <td>${dividend.return.toFixed(2)}%</td>
+                    `;
+                    dividendsTable.appendChild(row);
+                });
+            } else {
+                const row = document.createElement('tr');
+                row.innerHTML = '<td colspan="5" class="text-center">Aucun dividende versé</td>';
+                dividendsTable.appendChild(row);
+            }
+        }
+    </script>
 </body>
 </html>
