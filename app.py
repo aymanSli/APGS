@@ -385,7 +385,8 @@ def get_portfolio_data():
         'total_value': portfolio_state['total_value'],
         'interest_rate': simulation.risk_free_rate * 100,  # En pourcentage
         'positions': positions,
-        'pnl': calculate_pnl()
+        'pnl': calculate_pnl(),
+        'liquidative_value':simulation.monte_carlo.price
     }
 
     return portfolio_data

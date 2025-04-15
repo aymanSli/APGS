@@ -99,7 +99,7 @@
                                                 <th>Product Name</th>
                                                 <th class="text-end">Quantity</th>
                                                 <th class="text-end">Price (€)</th>
-                                                <th class="text-end">Price in Foreign Currency</th>
+                                                <th class="text-end"> </th>
                                                 <th class="text-end">Total Value (€)</th>
                                             </tr>
                                         </thead>
@@ -110,11 +110,9 @@
                                                 <td class="text-end">{{ "%.6f"|format(position.delta) }}</td>
                                                 <td class="text-end">{{ "%.6f"|format(position.price) }} €</td>
                                                 <td class="text-end">
-                                                    {% if position.foreign_currency %}
-                                                    {{ "%.6f"|format(position.price) }} {{ position.foreign_currency }}
-                                                    {% else %}
-                                                    -
-                                                    {% endif %}
+
+
+
                                                 </td>
                                                 <td class="text-end">{{ "%.2f"|format(position.value) }} €</td>
                                             </tr>
@@ -165,6 +163,18 @@
                                     <div class="card-body">
                                         <div class="text-center bg-light p-4 rounded">
                                             <h2>{{ "%.2f"|format(portfolio.total_value) }} €</h2>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card h-100">
+                                    <div class="card-header">
+                                        <i class="fas fa-money-bill-wave me-2"></i> liquidative value
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="text-center bg-light p-4 rounded">
+                                            <h2>{{ "%.2f"|format(portfolio.liquidative_value) }} €</h2>
                                         </div>
                                     </div>
                                 </div>
