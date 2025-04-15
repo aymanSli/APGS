@@ -40,7 +40,7 @@ class DateHandler:
         self.current_date = None
         
         # For quick lookups
-        self.trading_days_per_year = 262  # Used for time fraction calculations
+        self.trading_days_per_year = 252  # Used for time fraction calculations
     
     def _load_dates(self, date_column_name, sheet_name):
         """
@@ -238,9 +238,9 @@ class DateHandler:
             
         for key, key_date in self.key_dates.items():
             if key_date == date:
-                return True, key
+                return True,key
                 
-        return False, None
+        return False,None
     
     def get_next_key_date(self, date=None):
         """

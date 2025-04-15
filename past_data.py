@@ -32,7 +32,7 @@ class PastData:
         """
         self.market_data = market_data
         self.date_handler = date_handler
-        self.trading_days_per_year = 262
+        self.trading_days_per_year = 252
         
         # Get the list of domestic and foreign indices
         self.domestic_indices = market_data.domestic_indices

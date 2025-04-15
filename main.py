@@ -281,7 +281,7 @@ class StructuredProductSimulation:
             self.update_past_matrix()
             date_index = self.market_data.get_date_index(self.current_date)
             self.risk_free_rate = self.market_data.get_interest_rate('EUR', date_index)
-            self.portfolio.cash=self.portfolio.cash*np.exp(self.risk_free_rate*(days/262))
+            self.portfolio.cash=self.portfolio.cash*np.exp(self.risk_free_rate*(days/252))
     
     def jump_to_next_key_date(self):
         """Jump directly to the next key date."""
@@ -323,6 +323,7 @@ class StructuredProductSimulation:
             
             print(f"Final payoff: €{payoff:.2f}")
             
+            
             # Process final payment (unwinding the portfolio)
             spot_prices = self.past_data.get_spot_prices()
             self.product.update_interest_rates(self.current_date)
@@ -339,10 +340,13 @@ class StructuredProductSimulation:
             print(f"Portfolio unwound. Final cash: €{unwind_result['cash']:.2f}")
             
             # Calculate final settlement
-            final_settlement = unwind_result['cash'] - payoff
+            self.portfolio.cash = unwind_result['cash'] - payoff
             
-            print(f"Final settlement (payoff - portfolio value): €{final_settlement:.2f}")
-            
+            print(f"Final settlement (payoff - portfolio value): €{self.portfolio.cash:.2f}\n")
+            if self.portfolio.cash<0:
+                print("We need money. Hedging failed.")
+            else:
+                print("Hedging succeeded.")
             # End the simulation
             self.running = False
             
@@ -370,6 +374,12 @@ class StructuredProductSimulation:
             
             # Process dividend payment
             if dividend > 0:
+                self.display_status()
+                print(f"a dividend of €{dividend:.2f} should be paid.\n")
+                proceed = input("Pay? (y/n): ").lower()
+                while proceed != 'y':
+                    proceed = input("you have to pay so type (y) to continue.").lower()
+                    
                 spot_prices = self.past_data.get_spot_prices()
                 payment = self.portfolio.process_dividend_payment(
                     dividend,
@@ -387,11 +397,14 @@ class StructuredProductSimulation:
                 })
                 
                 print(f"Dividend paid: €{dividend:.2f} from best-performing index {best_index} (return: {best_return*100:.2f}%)")
+                self.display_status()
             else:
                 print("No dividend payment for this key date.")
             
             # Rebalance portfolio after key date event
-            self.rebalance_portfolio(automatic=True)
+            proceed = input("Rebalance ? (y/n): ").lower()
+            if proceed=='y' :
+                self.rebalance_portfolio(automatic=True)
     
     def rebalance_portfolio(self, automatic=False):
         """Rebalance the portfolio based on new deltas."""
@@ -422,7 +435,6 @@ class StructuredProductSimulation:
         print(f"Rebalance complete.")
         print(f"Cash after rebalance: €{rebalance_result['cash']:.2f}")
         print(f"Total value after rebalance: €{rebalance_result['final_value']:.2f}")
-        print(f"P&L from rebalance: €{rebalance_result['pnl']:.2f}")
         
         if not automatic:
             # Print trades if manual rebalance
@@ -430,7 +442,7 @@ class StructuredProductSimulation:
             if trades:
                 print("\nTrades executed:")
                 for trade in trades:
-                    print(f"  {trade['asset']}: Delta change {trade['delta_change']:.4f}, Value €{trade['value']:.2f}, Cost €{trade['cost']:.2f}")
+                    print(f"  {trade['asset']}: Delta change {trade['delta_change']:.4f}, Value €{trade['value']:.2f}")
             else:
                 print("No trades executed.")
     

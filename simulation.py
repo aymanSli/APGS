@@ -26,8 +26,8 @@ class Simulation:
         self.date_handler = date_handler
         
         # Default simulation parameters
-        self.num_simulations =2000
-        self.trading_days_per_year = 262  # Standard convention for annualization
+        self.num_simulations =500
+        self.trading_days_per_year = 252  # Standard convention for annualization
         
         # Indices and asset counts for indexing
         self.domestic_indices = self.market_data.domestic_indices

@@ -81,8 +81,6 @@ class DeltaHedgingPortfolio:
             Current date of rebalancing
         last_rebalance_date : datetime
             Date of the last rebalancing operation
-        trade_costs : float, optional
-            Transaction costs as a fraction of trade value, default is 0.0001 (1bp)
             
         Returns:
         --------
@@ -90,7 +88,7 @@ class DeltaHedgingPortfolio:
             Dictionary with rebalancing information
         """
         # 1. Calculate time since last rebalance (in years)
-        dt = self.date_handler._count_trading_days(last_rebalance_date,current_date)/ 262
+        dt = self.date_handler._count_trading_days(last_rebalance_date,current_date)/ 252
         
         # 2. Grow cash at risk-free rate
         if current_date != self.date_handler.key_dates['T0'] :
@@ -148,8 +146,7 @@ class DeltaHedgingPortfolio:
             'deltas': self.deltas,
             'trades': trades,
             'initial_value': initial_value,
-            'final_value': final_value,
-            'pnl': final_value - initial_value
+            'final_value': final_value
         }
     
     def process_dividend_payment(self, amount: float, current_date: datetime, current_prices: List) -> Dict:
@@ -234,8 +231,6 @@ class DeltaHedgingPortfolio:
             Current date of unwinding
         last_rebalance_date : datetime
             Date of the last rebalancing operation
-        trade_costs : float, optional
-            Transaction costs as a fraction of trade value
             
         Returns:
         --------

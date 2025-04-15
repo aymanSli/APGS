@@ -12,7 +12,7 @@ class MonteCarlo:
     Provides deltas for all assets in a dictionary format.
     """
     
-    def __init__(self, date_handler, product, simulation, sim_params, num_samples=20, fd_steps=0.1):
+    def __init__(self, date_handler, product, simulation, sim_params, num_samples=500, fd_steps=0.1):
         """
         Initialize the MonteCarlo class.
         
@@ -135,7 +135,7 @@ class MonteCarlo:
         r_d = self.product.get_domestic_rate()
         
         # Calculate time to maturity
-        time_to_maturity = self.date_handler._count_trading_days(current_date, tc_date) / 262
+        time_to_maturity = self.date_handler._count_trading_days(current_date, tc_date) / 252
         volatilities, cholesky_matrix = self.sim_params.calculate_parameters(current_date)
         discount_factor = np.exp(-r_d * time_to_maturity)
         

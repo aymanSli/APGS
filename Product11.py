@@ -171,7 +171,7 @@ class Product11:
         r_i = self.market_data.get_interest_rate(
                 self.market_data.index_currencies[index_name], 
                 self.market_data.get_date_index(self.date_handler.key_dates[date_key]))
-        term = self.date_handler._count_trading_days(self.date_handler.key_dates['T0'], self.date_handler.key_dates[date_key]) / 262
+        term = self.date_handler._count_trading_days(self.date_handler.key_dates['T0'], self.date_handler.key_dates[date_key]) / 252
         
         # Calculate S = SX / (X*exp(ri*(t-T0))) * exp(ri*(t-T0))
         if x_adj_value > 0:  # Avoid division by zero
