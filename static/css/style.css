@@ -120,6 +120,55 @@ body {
     background-color: #f8f9fa;
     border-bottom: 1px solid #dee2e6;
 }
+/* Style pour le bouton de paiement de dividende */
+#pay-dividend-btn {
+    transition: all 0.3s ease;
+}
+
+#pay-dividend-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* Animation pour les notifications */
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.notification {
+    animation: slideIn 0.3s forwards;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Style supplémentaire pour la section produit */
+.product-info-section {
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+/* Couleurs pour le P&L */
+.bg-profit {
+    background-color: rgba(40, 167, 69, 0.1);
+    border: 1px solid rgba(40, 167, 69, 0.2);
+}
+
+.bg-loss {
+    background-color: rgba(220, 53, 69, 0.1);
+    border: 1px solid rgba(220, 53, 69, 0.2);
+}
+
+/* Effet de hover sur les boutons d'action */
+.btn-success:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
 
 /* Responsive */
 @media (max-width: 992px) {

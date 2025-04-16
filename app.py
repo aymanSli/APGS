@@ -662,5 +662,84 @@ def get_market_data():
     }
 
     return market_data, basket_data, fx_rates, eur_rate
+
+
+@app.route('/pay_dividend', methods=['POST'])
+def pay_dividend():
+    """Payer un dividende et exclure l'indice correspondant."""
+    if simulation is None:
+        return jsonify({'success': False, 'error': 'Simulation non initialisée'}), 400
+
+    try:
+        # Trouver la dernière date clé que nous avons dépassée
+        last_key_date, key_name = None, None
+        for k, date in simulation.date_handler.key_dates.items():
+            if date <= simulation.current_date and k not in ['T0', 'Tc']:  # Ignorer T0 et Tc
+                if last_key_date is None or date > last_key_date:
+                    last_key_date = date
+                    key_name = k
+
+        if last_key_date is None or key_name is None:
+            return jsonify({'success': False, 'error': 'Aucune date clé de paiement n\'a encore été atteinte'}), 400
+
+        # Vérifier si le dividende pour cette date clé a déjà été payé
+        for div in simulation.dividends_paid:
+            if div['key'] == key_name:
+                return jsonify(
+                    {'success': False, 'error': f'Le dividende pour la date clé {key_name} a déjà été payé'}), 400
+
+        # Calculer les indices exclus
+        exclude_indices = simulation.excluded_indices.copy()
+
+        # Calculer le dividende
+        dividend, best_index, best_return = simulation.product.calculate_dividend(
+            key_name,
+            simulation.past_matrix,
+            exclude_indices
+        )
+
+        if dividend <= 0:
+            return jsonify({'success': False, 'error': 'Aucun dividende à payer à cette date'}), 400
+
+        # Mettre à jour les indices exclus
+        if best_index and best_index not in simulation.excluded_indices:
+            simulation.excluded_indices.append(best_index)
+
+        # Vérifier si la garantie minimale est déclenchée
+        guarantee_check = simulation.product.check_minimum_guarantee(key_name, simulation.past_matrix)
+        if guarantee_check and not simulation.guarantee_triggered:
+            simulation.guarantee_triggered = True
+
+        # Traiter le paiement du dividende
+        spot_prices = simulation.past_data.get_spot_prices()
+        payment = simulation.portfolio.process_dividend_payment(
+            dividend,
+            simulation.current_date,
+            spot_prices
+        )
+
+        # Enregistrer le paiement du dividende
+        simulation.dividends_paid.append({
+            'date': simulation.current_date,
+            'key': key_name,
+            'amount': dividend,
+            'index': best_index,
+            'return': best_return
+        })
+
+        return jsonify({
+            'success': True,
+            'dividend': dividend,
+            'best_index': best_index,
+            'best_return': best_return * 100,  # En pourcentage
+            'excluded_indices': simulation.excluded_indices,
+            'guarantee_triggered': simulation.guarantee_triggered,
+            'portfolio': get_portfolio_data(),
+            'dividends': get_dividends_data()
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, port=8080)

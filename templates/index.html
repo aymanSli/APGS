@@ -245,49 +245,53 @@
                         </div>
                     </div>
                 </div>
-
                 <!-- Product Status -->
-                <div class="card">
-                    <div class="card-header">
-                        <i class="fas fa-info-circle me-2"></i> Product Status
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <h6>Excluded Indices:</h6>
-                                    <p id="excluded-indices">
-                                        {% if product.excluded_indices %}
-                                            {{ product.excluded_indices|join(', ') }}
-                                        {% else %}
-                                            Aucun
-                                        {% endif %}
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <h6>Minimum Guarantee Triggered:</h6>
-                                    <p id="guarantee-status">
-                                        {% if product.guarantee_triggered %}
-                                            <span class="badge bg-success">Oui</span>
-                                        {% else %}
-                                            <span class="badge bg-warning">Non</span>
-                                        {% endif %}
-                                    </p>
-                                </div>
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-info-circle me-2"></i> Product Status
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <h6>Excluded Indices:</h6>
+                                <p id="excluded-indices">
+                                    {% if product.excluded_indices %}
+                                        {{ product.excluded_indices|join(', ') }}
+                                    {% else %}
+                                        Aucun
+                                    {% endif %}
+                                </p>
                             </div>
                         </div>
-                        <div class="row">
-                            <div class="col-md-12">
-                                <button class="btn btn-outline-info" id="product-details-btn">
-                                    <i class="fas fa-file-alt me-2"></i> View Detailed Product Information
-                                </button>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <h6>Minimum Guarantee Triggered:</h6>
+                                <p id="guarantee-status">
+                                    {% if product.guarantee_triggered %}
+                                        <span class="badge bg-success">Oui</span>
+                                    {% else %}
+                                        <span class="badge bg-warning">Non</span>
+                                    {% endif %}
+                                </p>
                             </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <button class="btn btn-outline-info" id="product-details-btn">
+                                <i class="fas fa-file-alt me-2"></i> View Detailed Product Information
+                            </button>
+                        </div>
+                        <div class="col-md-6">
+                            <button class="btn btn-success" id="pay-dividend-btn">
+                                <i class="fas fa-money-bill me-2"></i> Payer Dividende et Exclure l'Indice
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
         </div>
     </div>
 
@@ -879,6 +883,251 @@
                 dividendsTable.appendChild(row);
             }
         }
+
+         // Gestionnaire d'événement pour le bouton de paiement de dividende
+document.getElementById('pay-dividend-btn').addEventListener('click', function() {
+    // Désactiver le bouton pendant le traitement
+    this.disabled = true;
+    this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Traitement en cours...';
+
+    // Faire une requête pour payer le dividende
+    fetch('/pay_dividend', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Mettre à jour l'interface utilisateur avec les nouvelles données
+            updateUIAfterDividendPayment(data);
+
+            // Afficher un message de succès
+            showNotification('success', `Dividende de ${data.dividend.toFixed(2)}€ payé pour l'indice ${data.best_index} (rendement: ${data.best_return.toFixed(2)}%)!`);
+        } else {
+            // Afficher un message d'erreur
+            showNotification('error', `Erreur: ${data.error}`);
+        }
+    })
+    .catch(error => {
+        showNotification('error', `Erreur lors de la requête: ${error}`);
+    })
+    .finally(() => {
+        // Réactiver le bouton
+        this.disabled = false;
+        this.innerHTML = '<i class="fas fa-money-bill me-2"></i> Payer Dividende et Exclure l\'Indice';
+    });
+});
+
+// Fonction pour mettre à jour l'interface après le paiement d'un dividende
+function updateUIAfterDividendPayment(data) {
+    // Mise à jour des indices exclus
+    if (data.excluded_indices && data.excluded_indices.length > 0) {
+        document.getElementById('excluded-indices').textContent = data.excluded_indices.join(', ');
+    } else {
+        document.getElementById('excluded-indices').textContent = 'Aucun';
+    }
+
+    // Mise à jour du statut de garantie
+    const guaranteeStatus = document.getElementById('guarantee-status');
+    if (data.guarantee_triggered) {
+        guaranteeStatus.innerHTML = '<span class="badge bg-success">Oui</span>';
+    } else {
+        guaranteeStatus.innerHTML = '<span class="badge bg-warning">Non</span>';
+    }
+
+    // Mise à jour des valeurs du portefeuille
+    if (data.portfolio) {
+        updatePortfolioData(data.portfolio);
+    }
+
+    // Mise à jour du tableau des dividendes
+    if (data.dividends) {
+        updateDividendsTable(data.dividends);
+    }
+
+    // Désactiver le bouton jusqu'à la prochaine date clé
+    document.getElementById('pay-dividend-btn').disabled = true;
+}
+
+// Fonction pour mettre à jour le tableau des dividendes
+function updateDividendsTable(dividends) {
+    const table = document.getElementById('dividends-table').getElementsByTagName('tbody')[0];
+
+    // Vider le tableau existant
+    table.innerHTML = '';
+
+    // Si aucun dividende, afficher un message
+    if (!dividends || dividends.length === 0) {
+        const row = table.insertRow();
+        const cell = row.insertCell(0);
+        cell.colSpan = 5;
+        cell.className = 'text-center';
+        cell.textContent = 'Aucun dividende versé';
+        return;
+    }
+
+    // Ajouter les nouvelles lignes
+    dividends.forEach(dividend => {
+        const row = table.insertRow();
+
+        const dateCell = row.insertCell(0);
+        dateCell.textContent = dividend.date;
+
+        const keyCell = row.insertCell(1);
+        keyCell.textContent = dividend.key;
+
+        const amountCell = row.insertCell(2);
+        amountCell.textContent = `${dividend.amount.toFixed(2)} €`;
+
+        const indexCell = row.insertCell(3);
+        indexCell.textContent = dividend.index;
+
+        const returnCell = row.insertCell(4);
+        returnCell.textContent = `${dividend.return.toFixed(2)}%`;
+    });
+}
+
+// Fonction pour mettre à jour les données du portefeuille
+function updatePortfolioData(portfolio) {
+    // Mise à jour des valeurs du portefeuille
+    document.querySelectorAll('#positions-table tr').forEach((row, index) => {
+        if (index < portfolio.positions.length) {
+            const position = portfolio.positions[index];
+            const cells = row.getElementsByTagName('td');
+
+            cells[0].textContent = position.name;
+            cells[1].textContent = position.delta.toFixed(6);
+            cells[2].textContent = `${position.price.toFixed(6)} €`;
+            cells[4].textContent = `${position.value.toFixed(2)} €`;
+        }
+    });
+
+    // Mise à jour des valeurs dans le pied du tableau
+    const tfoot = document.querySelector('#positions-table').closest('table').getElementsByTagName('tfoot')[0];
+    const rows = tfoot.getElementsByTagName('tr');
+
+    rows[0].getElementsByTagName('th')[1].textContent = `${portfolio.cash.toFixed(2)} €`;
+    rows[1].getElementsByTagName('th')[1].textContent = `${portfolio.interest_rate.toFixed(2)} %`;
+    rows[2].getElementsByTagName('th')[1].textContent = `${portfolio.total_value.toFixed(2)} €`;
+
+    // Mise à jour du P&L
+    const pnlElement = document.querySelector('.col-md-6 .card-body h2');
+    if (pnlElement) {
+        pnlElement.textContent = `${portfolio.pnl.toFixed(2)}%`;
+
+        // Mise à jour de la classe de couleur
+        const pnlContainer = pnlElement.closest('.text-center');
+        if (pnlContainer) {
+            if (portfolio.pnl >= 0) {
+                pnlContainer.classList.remove('bg-loss');
+                pnlContainer.classList.add('bg-profit');
+            } else {
+                pnlContainer.classList.remove('bg-profit');
+                pnlContainer.classList.add('bg-loss');
+            }
+        }
+    }
+
+    // Mise à jour de la valeur du portefeuille
+    const valueElement = document.querySelector('.col-md-6:nth-child(2) .card-body h2');
+    if (valueElement) {
+        valueElement.textContent = `${portfolio.total_value.toFixed(2)} €`;
+    }
+}
+
+// Fonction pour afficher une notification
+function showNotification(type, message) {
+    // Créer l'élément de notification
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type === 'success' ? 'success' : 'danger'} notification`;
+    notification.innerHTML = `
+        <div>${message}</div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+
+    // Ajouter au conteneur de notifications (à créer si nécessaire)
+    let notificationContainer = document.getElementById('notification-container');
+    if (!notificationContainer) {
+        notificationContainer = document.createElement('div');
+        notificationContainer.id = 'notification-container';
+        notificationContainer.className = 'notification-container';
+        document.body.appendChild(notificationContainer);
+
+        // Ajouter le CSS pour le conteneur de notifications s'il n'existe pas déjà
+        if (!document.getElementById('notification-css')) {
+            const style = document.createElement('style');
+            style.id = 'notification-css';
+            style.innerHTML = `
+                .notification-container {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    z-index: 9999;
+                    width: 350px;
+                }
+                .notification {
+                    margin-bottom: 10px;
+                    animation: fadeIn 0.5s, fadeOut 0.5s 4.5s;
+                    opacity: 0;
+                    animation-fill-mode: forwards;
+                }
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                @keyframes fadeOut {
+                    from { opacity: 1; }
+                    to { opacity: 0; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+
+    // Ajouter la notification au conteneur
+    notificationContainer.appendChild(notification);
+
+    // Supprimer la notification après 5 secondes
+    setTimeout(() => {
+        notification.remove();
+    }, 5000);
+}
+
+// Fonction pour vérifier si des dividendes sont disponibles pour paiement
+function updateDividendPaymentButton() {
+    // Par défaut, le bouton est activé
+    const payDividendBtn = document.getElementById('pay-dividend-btn');
+    if (payDividendBtn) {
+        // Nous permettons de payer les dividendes à n'importe quel moment après qu'une date clé soit passée
+        payDividendBtn.disabled = false;
+    }
+}
+
+// Mettre à jour l'état du bouton après un paiement réussi
+function updateButtonAfterPayment(data) {
+    // Si on reçoit une mise à jour des dividendes, on vérifie s'il reste des dates clés à payer
+    // Pour l'instant, on garde le bouton actif à moins que l'API nous dise qu'il n'y a plus de dividendes à payer
+    if (data.no_more_dividends) {
+        const payDividendBtn = document.getElementById('pay-dividend-btn');
+        if (payDividendBtn) {
+            payDividendBtn.disabled = true;
+            payDividendBtn.title = "Tous les dividendes disponibles ont été payés";
+        }
+    }
+}
+
+// Initialiser à chargement de la page
+document.addEventListener('DOMContentLoaded', function() {
+    updateDividendPaymentButton();
+
+    // Ajouter des tooltips pour expliquer le fonctionnement du bouton
+    const payDividendBtn = document.getElementById('pay-dividend-btn');
+    if (payDividendBtn) {
+        payDividendBtn.title = "Payer le dividende pour la dernière date clé atteinte et exclure l'indice correspondant";
+    }
+});
     </script>
 </body>
 </html>
