@@ -122,10 +122,87 @@ def jump_key_date():
     """Sauter à la prochaine date clé."""
     if simulation is None:
         return jsonify({'success': False, 'error': 'Simulation non initialisée'}), 400
-
     try:
-        # Sauter à la prochaine date clé
-        simulation.jump_to_next_key_date()
+        # Récupérer la prochaine date clé
+        next_key_date = simulation.date_handler.get_next_key_date(simulation.current_date)
+        if not next_key_date:
+            return jsonify({'success': False, 'error': 'Pas de date clé future'}), 400
+
+        # Trouver le nom de la clé
+        key_name = None
+        for key, date in simulation.date_handler.key_dates.items():
+            if date == next_key_date:
+                key_name = key
+                break
+
+        # Sauter à la date clé
+        print(f"Jumping to key date {key_name}: {next_key_date}...")
+        simulation.current_date = next_key_date
+        simulation.update_past_matrix()
+        date_index = simulation.market_data.get_date_index(simulation.current_date)
+        simulation.risk_free_rate = simulation.market_data.get_interest_rate('EUR', date_index)
+
+        # Informations sur le dividende et autres calculs à la date clé
+        dividend_info = None
+        final_result = None
+
+        # Traiter selon le type de date clé
+        if key_name == 'Tc':
+            # Calculer le payoff final
+            payoff = simulation.product.calculate_final_payoff(simulation.past_matrix)
+
+            # Dénouer le portefeuille
+            spot_prices = simulation.past_data.get_spot_prices()
+            simulation.product.update_interest_rates(simulation.current_date)
+
+            unwind_result = simulation.portfolio.unwind_portfolio(
+                spot_prices,
+                simulation.current_date,
+                simulation.last_rebalancing_date,
+                simulation.risk_free_rate
+            )
+
+            # Calculer le règlement final
+            final_cash = unwind_result['cash'] - payoff
+            simulation.portfolio.cash = final_cash
+
+            final_result = {
+                'payoff': payoff,
+                'unwound_value': unwind_result['cash'],
+                'final_settlement': final_cash,
+                'success': final_cash >= 0
+            }
+        else:
+            # Calculer les informations de dividende sans payer
+            exclude_indices = simulation.excluded_indices.copy()
+
+            # Calculer dividende
+            dividend, best_index, best_return = simulation.product.calculate_dividend(
+                key_name,
+                simulation.past_matrix,
+                exclude_indices
+            )
+
+            # Check minimum guarantee
+            guarantee_check = simulation.product.check_minimum_guarantee(key_name, simulation.past_matrix)
+            if guarantee_check and not simulation.guarantee_triggered:
+                simulation.guarantee_triggered = True
+
+            # Informations sur le dividende sans paiement
+            if dividend > 0:
+                dividend_info = {
+                    'key': key_name,
+                    'amount': dividend,
+                    'best_index': best_index,
+                    'best_return': best_return * 100,  # en pourcentage
+                    'can_pay': True
+                }
+            else:
+                dividend_info = {
+                    'key': key_name,
+                    'amount': 0,
+                    'can_pay': False
+                }
 
         # Mettre à jour l'historique du portefeuille
         spot_prices = simulation.past_data.get_spot_prices()
@@ -138,16 +215,19 @@ def jump_key_date():
         return jsonify({
             'success': True,
             'date': simulation.current_date.strftime('%Y-%m-%d'),
+            'key_name': key_name,
             'portfolio': get_portfolio_data(),
             'product': get_product_data(),
             'dividends': get_dividends_data(),
-            'flows': get_flows_data()
+            'flows': get_flows_data(),
+            'dividend_info': dividend_info,
+            'final_result': final_result
         })
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
-
 @app.route('/get_rebalancing_info', methods=['GET'])
 def get_rebalancing_info():
     """Obtenir les informations nécessaires pour le rebalancement."""
@@ -184,8 +264,6 @@ def get_rebalancing_info():
         # Calculer des mesures de risque (exemples)
         risk_measures = {
             'total_delta': sum(simulation.portfolio.deltas),
-            'gamma': 0.01,  # Exemple, à remplacer par vrai calcul
-            'vega': 0.02  # Exemple, à remplacer par vrai calcul
         }
 
         return jsonify({
@@ -237,7 +315,8 @@ def rebalance():
             'total_value_after': rebalance_result.get('final_value', 0),
             'pnl': rebalance_result.get('pnl', 0)
         }
-
+        # Ajouter cette ligne à la fin du try block dans la fonction rebalance()
+        simulation.last_rebalancing_date = simulation.current_date
         return jsonify({
             'success': True,
             'portfolio': get_portfolio_data(),
@@ -385,7 +464,7 @@ def get_portfolio_data():
         'total_value': portfolio_state['total_value'],
         'interest_rate': simulation.risk_free_rate * 100,  # En pourcentage
         'positions': positions,
-        'pnl': calculate_pnl(),
+        'pnl':calculate_pnl(),
         'liquidative_value':simulation.monte_carlo.price
     }
 
@@ -458,7 +537,7 @@ def calculate_pnl():
     if len(portfolio_history) < 2:
         return 0.0
 
-    initial_value = portfolio_history[0]['value']
+    initial_value = simulation.monte_carlo.price
     current_value = portfolio_history[-1]['value']
 
     return ((current_value / initial_value) - 1) * 100  # P&L en pourcentage
@@ -558,9 +637,83 @@ def market_info():
         'product_perf': product_perf
     }
 
-    # Création d'un historique des prix pour le graphique
-    # (Idéalement, ceci serait basé sur des données historiques réelles)
+    # Création d'un historique des prix pour chaque indice sur un an
     price_history = {}
+
+    # Pour éviter les erreurs, on génère des données de démonstration si les données réelles ne sont pas disponibles
+    try:
+        # Pour chaque indice, collecter l'historique des prix sur un an
+        for index_name in indices:
+            # Historique de 1 an (maximum)
+            prices = []
+            dates = []
+
+            # On cherche l'index d'il y a 1 an max
+            max_history_length = min(252, date_index)  # Maximum 252 jours de trading (1 an)
+            start_idx = max(0, date_index - max_history_length)
+
+            # Collecter les données historiques
+            for i in range(start_idx, date_index + 1):
+                try:
+                    # Obtenir la date
+                    history_date = simulation.date_handler.get_date_from_index(i)
+                    if history_date:
+                        # Obtenir le prix
+                        price = simulation.market_data.get_asset_price(index_name, i)
+
+                        # Vérifier si le prix est valide
+                        if price and price > 0:
+                            dates.append(history_date.strftime('%Y-%m-%d'))
+                            prices.append(float(price))
+                except Exception as e:
+                    print(f"Erreur lors de la récupération des données pour {index_name} à l'index {i}: {str(e)}")
+                    continue
+
+            # Stocker les données
+            price_history[index_name] = {
+                'dates': dates,
+                'prices': prices
+            }
+
+            # Afficher des informations de débogage
+            print(f"Historique pour {index_name}: {len(dates)} points de données")
+
+    except Exception as e:
+        print(f"Erreur lors de la création de l'historique des prix: {str(e)}")
+
+        # En cas d'erreur, créer des données de démonstration
+        import random
+        from datetime import timedelta
+
+        print("Génération de données de démonstration pour les graphiques")
+        demo_price_history = {}
+
+        for index_name in indices:
+            dates = []
+            prices = []
+            start_price = random.uniform(100, 1000)
+
+            # Générer des données pour 1 an (environ 252 jours de trading)
+            current_demo_date = current_date - timedelta(days=365)
+
+            for i in range(252):
+                # Ajouter un jour
+                current_demo_date += timedelta(days=1)
+
+                # Variations aléatoires entre -2% et +2%
+                variation = random.uniform(-0.02, 0.02)
+                start_price = start_price * (1 + variation)
+
+                # Enregistrer les données
+                dates.append(current_demo_date.strftime('%Y-%m-%d'))
+                prices.append(round(start_price, 2))
+
+            demo_price_history[index_name] = {
+                'dates': dates,
+                'prices': prices
+            }
+
+        price_history = demo_price_history
 
     # Rassembler les données pour le template
     return render_template(
@@ -570,9 +723,9 @@ def market_info():
         basket_data=basket_data,
         fx_rates=fx_rates,
         eur_rate=eur_rate,
-        portfolio=portfolio_state
+        portfolio=portfolio_state,
+        price_history=price_history
     )
-
 
 def get_market_data():
     """Obtenir les données de marché pour les indices du panier."""
@@ -666,7 +819,7 @@ def get_market_data():
 
 @app.route('/pay_dividend', methods=['POST'])
 def pay_dividend():
-    """Payer un dividende et exclure l'indice correspondant."""
+    """Payer un dividende pour une date clé déjà atteinte."""
     if simulation is None:
         return jsonify({'success': False, 'error': 'Simulation non initialisée'}), 400
 
@@ -685,8 +838,10 @@ def pay_dividend():
         # Vérifier si le dividende pour cette date clé a déjà été payé
         for div in simulation.dividends_paid:
             if div['key'] == key_name:
-                return jsonify(
-                    {'success': False, 'error': f'Le dividende pour la date clé {key_name} a déjà été payé'}), 400
+                return jsonify({'success': False, 'error': f'Le dividende pour {key_name} a déjà été payé'}), 400
+
+        # IMPORTANT: S'assurer que past_matrix est à jour
+        simulation.update_past_matrix()
 
         # Calculer les indices exclus
         exclude_indices = simulation.excluded_indices.copy()
@@ -701,10 +856,6 @@ def pay_dividend():
         if dividend <= 0:
             return jsonify({'success': False, 'error': 'Aucun dividende à payer à cette date'}), 400
 
-        # Mettre à jour les indices exclus
-        if best_index and best_index not in simulation.excluded_indices:
-            simulation.excluded_indices.append(best_index)
-
         # Vérifier si la garantie minimale est déclenchée
         guarantee_check = simulation.product.check_minimum_guarantee(key_name, simulation.past_matrix)
         if guarantee_check and not simulation.guarantee_triggered:
@@ -712,11 +863,15 @@ def pay_dividend():
 
         # Traiter le paiement du dividende
         spot_prices = simulation.past_data.get_spot_prices()
-        payment = simulation.portfolio.process_dividend_payment(
+        simulation.portfolio.process_dividend_payment(
             dividend,
             simulation.current_date,
             spot_prices
         )
+
+        # C'est SEULEMENT APRÈS le paiement que nous mettons à jour les indices exclus
+        if best_index and best_index not in simulation.excluded_indices:
+            simulation.excluded_indices.append(best_index)
 
         # Enregistrer le paiement du dividende
         simulation.dividends_paid.append({
@@ -731,7 +886,7 @@ def pay_dividend():
             'success': True,
             'dividend': dividend,
             'best_index': best_index,
-            'best_return': best_return * 100,  # En pourcentage
+            'best_return': best_return * 100,
             'excluded_indices': simulation.excluded_indices,
             'guarantee_triggered': simulation.guarantee_triggered,
             'portfolio': get_portfolio_data(),
@@ -740,6 +895,5 @@ def pay_dividend():
 
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
 if __name__ == '__main__':
     app.run(debug=True, port=8080)

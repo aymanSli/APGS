@@ -343,87 +343,196 @@
 
     // Graphique des indices
     function initIndicesChart() {
-        const ctx = document.getElementById('indicesChart').getContext('2d');
+    const ctx = document.getElementById('indicesChart');
 
-        // Données réelles des indices qui seraient fournies par le serveur
-        const indicesData = {{ price_history|default('{}')|safe }};
-
-        // Si aucune donnée réelle, utiliser des données fictives pour la démo
-        const demoData = {
-            labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
-            datasets: [
-                {
-                    label: 'ASX200',
-                    data: [100, 95, 90, 85, 80, 85, 90],
-                    borderColor: '#007bff',
-                    tension: 0.1,
-                    fill: false
-                },
-                {
-                    label: 'DAX',
-                    data: [100, 98, 95, 90, 88, 85, 82],
-                    borderColor: '#28a745',
-                    tension: 0.1,
-                    fill: false
-                },
-                {
-                    label: 'FTSE100',
-                    data: [100, 97, 93, 90, 92, 89, 87],
-                    borderColor: '#dc3545',
-                    tension: 0.1,
-                    fill: false
-                },
-                {
-                    label: 'NASDAQ100',
-                    data: [100, 90, 85, 80, 75, 70, 65],
-                    borderColor: '#ffc107',
-                    tension: 0.1,
-                    fill: false
-                },
-                {
-                    label: 'SMI',
-                    data: [100, 95, 92, 90, 89, 88, 87],
-                    borderColor: '#6f42c1',
-                    tension: 0.1,
-                    fill: false
-                }
-            ]
-        };
-
-        const chartData = Object.keys(indicesData).length > 0 ? indicesData : demoData;
-
-        const indicesChart = new Chart(ctx, {
-            type: 'line',
-            data: chartData,
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Performance normalisée des indices (base 100)'
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: false,
-                        title: {
-                            display: true,
-                            text: 'Performance (%)'
-                        }
-                    }
-                }
-            }
-        });
-
-        // Stocker le graphique dans une variable globale pour pouvoir y accéder plus tard
-        window.indicesChart = indicesChart;
+    if (!ctx) {
+        console.error("Canvas 'indicesChart' introuvable");
+        return;
     }
 
+    // Récupérer les données historiques
+    const priceHistory = {{ price_history|tojson|safe }};
+    console.log("Données historiques reçues:", priceHistory);
+
+    // Liste des indices disponibles
+    const indices = Object.keys(priceHistory);
+    console.log("Indices disponibles:", indices);
+
+    if (!indices.length) {
+        console.error("Aucun indice disponible dans les données historiques");
+        return;
+    }
+
+    // Indice sélectionné par défaut (premier indice)
+    let selectedIndex = indices[0];
+    let chartInstance = null;
+
+    // Fonction pour créer/mettre à jour le graphique pour un indice spécifique
+    function updateChart(indexName) {
+        // Vérifier si l'indice existe dans les données
+        if (!priceHistory[indexName]) {
+            console.error(`Indice ${indexName} non trouvé dans les données`);
+            return;
+        }
+
+        const indexData = priceHistory[indexName];
+
+        // Vérifier que les données sont valides
+        if (!indexData.dates || !indexData.prices || indexData.dates.length === 0) {
+            console.error(`Données manquantes ou invalides pour l'indice ${indexName}`);
+            return;
+        }
+
+        console.log(`Mise à jour du graphique pour ${indexName} avec ${indexData.dates.length} points`);
+
+        // Préparer les données pour le graphique
+        const chartData = {
+            labels: indexData.dates,
+            datasets: [{
+                label: indexName,
+                data: indexData.prices,
+                borderColor: getIndexColor(indexName),
+                backgroundColor: 'rgba(0, 0, 0, 0)',
+                borderWidth: 2,
+                pointRadius: 0,
+                pointHoverRadius: 5
+            }]
+        };
+
+        // Configuration du graphique
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: `${indexName} - Évolution du cours`,
+                    font: {
+                        size: 16
+                    }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
+                },
+                legend: {
+                    display: true,
+                    position: 'top'
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 45
+                    },
+                    grid: {
+                        display: false
+                    }
+                },
+                y: {
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.1)'
+                    }
+                }
+            },
+            hover: {
+                mode: 'nearest',
+                intersect: false
+            }
+        };
+
+        // Détruire le graphique existant s'il existe
+        if (chartInstance) {
+            chartInstance.destroy();
+        }
+
+        // Créer le nouveau graphique
+        chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: chartData,
+            options: chartOptions
+        });
+
+        // Mettre à jour l'indice sélectionné
+        selectedIndex = indexName;
+    }
+
+    // Fonction pour zoomer sur une période spécifique
+    function zoomChart(days) {
+        if (!chartInstance || !priceHistory[selectedIndex]) return;
+
+        const indexData = priceHistory[selectedIndex];
+        const allDates = [...indexData.dates];
+        const allPrices = [...indexData.prices];
+
+        if (days === 'all' || allDates.length <= days) {
+            // Afficher toutes les données
+            chartInstance.data.labels = allDates;
+            chartInstance.data.datasets[0].data = allPrices;
+        } else {
+            // Zoomer sur les derniers jours
+            chartInstance.data.labels = allDates.slice(-days);
+            chartInstance.data.datasets[0].data = allPrices.slice(-days);
+        }
+
+        chartInstance.update();
+    }
+
+    // Fonction pour obtenir une couleur pour un indice
+    function getIndexColor(indexName) {
+        const colors = {
+            'ASX200': '#007bff',
+            'DAX': '#28a745',
+            'FTSE100': '#dc3545',
+            'NASDAQ100': '#ffc107',
+            'SMI': '#6f42c1',
+            'CAC40': '#17a2b8',
+            'HANGSENG': '#fd7e14',
+            'NIKKEI': '#20c997'
+        };
+
+        return colors[indexName] || '#6c757d';
+    }
+
+    // Ajouter les écouteurs d'événements pour les boutons d'indice
+    document.querySelectorAll('button[data-index]').forEach(button => {
+        button.addEventListener('click', function() {
+            const clickedIndex = this.getAttribute('data-index');
+
+            if (clickedIndex !== 'all' && priceHistory[clickedIndex]) {
+                // Mettre à jour le graphique avec l'indice sélectionné
+                updateChart(clickedIndex);
+            }
+        });
+    });
+
+    // Ajouter les écouteurs d'événements pour les boutons de zoom
+    document.getElementById('zoom-1m').addEventListener('click', function() {
+        zoomChart(30); // 1 mois approximativement
+    });
+
+    document.getElementById('zoom-3m').addEventListener('click', function() {
+        zoomChart(90); // 3 mois approximativement
+    });
+
+    document.getElementById('zoom-6m').addEventListener('click', function() {
+        zoomChart(180); // 6 mois approximativement
+    });
+
+    document.getElementById('zoom-all').addEventListener('click', function() {
+        zoomChart('all'); // Toutes les données
+    });
+
+    // Initialiser le graphique avec le premier indice
+    updateChart(selectedIndex);
+
+    // Exposer les fonctions pour utilisation externe
+    window.chartFunctions = {
+        updateChart,
+        zoomChart
+    };
+}
     // Graphique des deltas
     function initDeltaChart() {
             const ctx = document.getElementById('deltaChart').getContext('2d');
